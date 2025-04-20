@@ -30,9 +30,58 @@ This is a simple PHP project designed to fetch content from a specific Notion pa
 
 ## Project Structure
 
+```text
 .
 ├── private/
 │   ├── cache/          # Cache directory (needs write permissions for the web server)
 │   └── config.php      # Configuration file (API key, page ID, cache settings) - **DO NOT COMMIT**
 ├── public_html/
-│   ├── 
+│   ├── css/
+│   │   └── style.css   # Main stylesheet (includes basic styling for blocks and table)
+│   ├── js/
+│   │   └── main.js     # Main JavaScript file (TOC generation, image lightbox)
+│   ├── .htaccess       # Apache configuration (routing, SetEnv for API key, cache headers, error docs)
+│   ├── index.php       # Main application file (routing, API calls, HTML rendering logic)
+│   └── error.php       # Simple error page handler
+├── .gitignore          # Specifies intentionally untracked files for Git
+└── README.md           # This documentation file
+```
+
+## Setup
+
+1.  **Clone the repository:**
+    ```bash
+    git clone <your-repository-url>
+    cd <repository-directory>
+    ```
+2.  **Configure API Key:**
+    *   **Recommended:** Set the `NOTION_API_KEY` environment variable on your server. You can often do this via your hosting control panel or by adding `SetEnv NOTION_API_KEY your_secret_key` to your `public_html/.htaccess` file.
+    *   **Alternative (Less Secure):** If you cannot set environment variables, you can modify `private/config.php` to include your key directly, but **ensure this file is listed in `.gitignore` and never committed to version control.** The script prioritizes the environment variable if set.
+3.  **Configure Notion Page ID:**
+    *   Edit `private/config.php` and set the `$notionPageId` variable to the ID of the main Notion page you want to display (the long hexadecimal string in the Notion page URL).
+4.  **Configure Cache:**
+    *   Ensure the `private/cache/` directory exists.
+    *   Make sure the web server process (e.g., `www-data`, `apache`) has **write permissions** for the `private/cache/` directory. This is crucial for caching to work.
+    *   You can adjust the default `$cacheExpiration` time (in seconds) in `private/config.php`.
+5.  **Web Server Configuration (Apache):**
+    *   Ensure your Apache configuration allows `.htaccess` overrides for the `public_html` directory (e.g., `AllowOverride All` in your virtual host or main server config).
+    *   The included `.htaccess` handles URL rewriting/routing and potentially setting the API key environment variable.
+6.  **Access the site:** Navigate to the root directory corresponding to `public_html` via your web browser (e.g., `http://yourdomain.com/`).
+
+## Dependencies
+
+*   PHP (tested on 7.x/8.x, requires `curl` extension enabled)
+*   Web server (Apache with `mod_rewrite` and `mod_env` enabled recommended)
+*   Notion API Key
+
+## Front-end Libraries (via CDN)
+
+*   [Prism.js](https://prismjs.com/): Used for syntax highlighting in code blocks. Included via CDN in `index.php`.
+
+## Limitations / Known Issues
+
+*   **Performance with Page Mentions**: Rendering pages (especially tables) containing many unique page mentions (`@[Page Name]`) can be slow, as each mention might trigger a separate API call to fetch the page title if it's not already cached.
+*   **Limited Block Support**: While common blocks are supported, more complex blocks (e.g., databases, synced blocks, advanced table features) are not implemented. Unsupported blocks are currently skipped silently.
+*   **Deeply Nested Blocks**: Very deep nesting of blocks might not render correctly, although basic list nesting should work.
+*   **URL Normalization**: The conversion from Notion page titles to URL paths (`normalizeTitleForPath` function) is basic. Titles with unusual characters or identical normalized paths might cause unexpected behavior.
+*   **No Real-time Updates**: Content is updated based on the cache expiration time. There's no mechanism for real-time updates via webhooks. 
