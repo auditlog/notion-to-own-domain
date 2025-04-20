@@ -54,9 +54,22 @@ This is a simple PHP project designed to fetch content from a specific Notion pa
     git clone <your-repository-url>
     cd <repository-directory>
     ```
-2.  **Configure API Key:**
-    *   **Recommended:** Set the `NOTION_API_KEY` environment variable on your server. You can often do this via your hosting control panel or by adding `SetEnv NOTION_API_KEY your_secret_key` to your `public_html/.htaccess` file.
-    *   **Alternative (Less Secure):** If you cannot set environment variables, you can modify `private/config.php` to include your key directly, but **ensure this file is listed in `.gitignore` and never committed to version control.** The script prioritizes the environment variable if set.
+2.  **Configure API Key:** Choose **one** of the following methods:
+    *   **Method 1 (Recommended: Environment Variable):**
+        *   Set the `NOTION_API_KEY` environment variable on your web server. How you do this depends on your hosting environment:
+            *   **Apache with `.htaccess`:** Add the following line to your `public_html/.htaccess` file:
+                ```apache
+                SetEnv NOTION_API_KEY your_actual_notion_api_key_here
+                ```
+            *   **Hosting Control Panel:** Look for options like "Environment Variables", "PHP Variables", or similar in your cPanel, Plesk, or other control panel.
+            *   **Other Server Configurations (Nginx, Docker, etc.):** Consult your server documentation for setting environment variables for PHP processes.
+        *   The `private/config.php` script will automatically detect and use this environment variable via `getenv('NOTION_API_KEY')`.
+    *   **Method 2 (Alternative: Direct Edit - Less Secure):**
+        *   If you cannot use environment variables, open the `private/config.php` file.
+        *   Find the section related to `$notionApiKey`.
+        *   Assign your Notion API key directly to the `$notionApiKey` variable within the `if (!$notionApiKey)` block (replacing the placeholder or previous value).
+        *   **Crucially:** Ensure `private/config.php` is listed in your `.gitignore` file and **never commit your API key** to version control.
+
 3.  **Configure Notion Page ID:**
     *   Edit `private/config.php` and set the `$notionPageId` variable to the ID of the main Notion page you want to display (the long hexadecimal string in the Notion page URL).
 4.  **Configure Cache:**
@@ -64,8 +77,8 @@ This is a simple PHP project designed to fetch content from a specific Notion pa
     *   Make sure the web server process (e.g., `www-data`, `apache`) has **write permissions** for the `private/cache/` directory. This is crucial for caching to work.
     *   You can adjust the default `$cacheExpiration` time (in seconds) in `private/config.php`.
 5.  **Web Server Configuration (Apache):**
-    *   Ensure your Apache configuration allows `.htaccess` overrides for the `public_html` directory (e.g., `AllowOverride All` in your virtual host or main server config).
-    *   The included `.htaccess` handles URL rewriting/routing and potentially setting the API key environment variable.
+    *   Ensure your Apache configuration allows `.htaccess` overrides for the `public_html` directory (e.g., `AllowOverride All` in your virtual host or main server config). This is needed for routing and potentially for `SetEnv`.
+    *   Ensure `mod_rewrite` and `mod_env` (if using `SetEnv`) are enabled.
 6.  **Access the site:** Navigate to the root directory corresponding to `public_html` via your web browser (e.g., `http://yourdomain.com/`).
 
 ## Dependencies
