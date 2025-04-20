@@ -13,9 +13,16 @@ body {
     padding: 20px;
     background-color: #fff;
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    margin-top: 10px;
+    padding-top: 20px;
+    padding-right: 20px;
+    padding-bottom: 20px;
+    padding-left: 20px;
 }
 
 header {
+    margin-top: 0;
+    padding-top: 0;
     margin-bottom: 30px;
     border-bottom: 1px solid #eee;
     padding-bottom: 10px;
@@ -25,7 +32,7 @@ header {
     margin-bottom: 40px;
 }
 
-h1, h2, h3 {
+h2, h3 {
     color: #222;
     margin-top: 1.5em;
     margin-bottom: 0.5em;
@@ -209,4 +216,71 @@ a:hover {
     text-align: center;
     border-radius: 5px;
     color: #666;
+}
+
+/* NOWE STYLE DLA OKŁADKI NA PEŁNĄ SZEROKOŚĆ */
+.page-cover-fullwidth-wrapper {
+    width: 100%; /* Pełna szerokość okna przeglądarki */
+    /* Ustaw wysokość - możesz użyć % viewportu (vh) lub stałej wartości px */
+    /* Notion często używa ok. 30% wysokości okna dla okładek */
+    height: 30vh; 
+    max-height: 400px; /* Ograniczenie maksymalnej wysokości */
+    min-height: 150px; /* Ograniczenie minimalnej wysokości */
+    overflow: hidden; /* Ukryj części obrazka wychodzące poza kontener */
+    position: relative; /* Potrzebne, jeśli chcesz dodawać elementy na wierzchu */
+    line-height: 0; /* Usuń potencjalny odstęp pod obrazkiem */
+    margin-bottom: 0;
+}
+
+.page-cover-fullwidth-image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Kluczowe: skaluje obrazek, aby pokrył kontener, przycinając go */
+    object-position: center; /* Wycentruj obrazek podczas przycinania (pionowo i poziomo) */
+}
+
+/* UPEWNIJ SIĘ, ŻE PONIŻSZE POPRAWNE REGUŁY ISTNIEJĄ I SĄ AKTYWNE: */
+
+/* Globalny styl tylko dla h2 i h3 */
+h2, h3 {
+    color: #222;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+}
+
+/* Styl dla kontenera - przywróć mały padding-top */
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    background-color: #fff;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    margin-top: 10px; /* Odstęp ZEWNĘTRZNY pod okładką */
+    
+    /* PRZYWRÓĆ LUB USTAW MAŁY WEWNĘTRZNY PADDING GÓRNY */
+    /* padding-top: 0; */ /* Zmień tę wartość */
+    padding-top: 20px;  /* Np. 20px - dostosuj według potrzeb */
+
+    /* Zachowaj pozostałe paddingi */
+    padding-right: 20px; 
+    padding-bottom: 20px; 
+    padding-left: 20px; 
+}
+
+/* Styl dla nagłówka w kontenerze - z wyzerowanym margin/padding-top */
+.container header {
+    margin-top: 0;
+    padding-top: 0;
+    margin-bottom: 30px; 
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px; 
+}
+
+/* Styl dla H1 w nagłówku kontenera */
+.container header h1 {
+    font-size: 2em; 
+    color: #222; 
+    margin-top: 0; 
+    margin-bottom: 0.5em; 
+    line-height: 1.1; 
 }

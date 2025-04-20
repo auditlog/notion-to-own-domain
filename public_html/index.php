@@ -112,16 +112,21 @@ function findNotionSubpageId($parentPageId, $subpagePath, $apiKey, $cacheDir, $c
     return $subpages[$subpagePath] ?? null;
 }
 
-// --- NOWA FUNKCJA: Pobiera tytuł strony Notion ---
+// --- ZMODYFIKOWANA FUNKCJA: Pobiera tytuł i URL okładki strony Notion ---
+// Zwraca: ['title' => string, 'coverUrl' => string|null]
 function getNotionPageTitle($pageId, $apiKey, $cacheDir, $cacheExpiration) {
-    $cacheFile = $cacheDir . 'title_' . md5($pageId) . '.cache';
-    $defaultTitle = 'Moja strona z zawartością Notion'; // Tytuł domyślny w razie problemów
+    // Zmieniono nazwę cache - przechowuje teraz obiekt/tablicę
+    $cacheFile = $cacheDir . 'pagedata_' . md5($pageId) . '.cache'; 
+    $defaultTitle = 'Moja strona z zawartością Notion'; 
+    $defaultResult = ['title' => $defaultTitle, 'coverUrl' => null];
 
     // Sprawdź cache
     if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < $cacheExpiration)) {
-        $cachedTitle = file_get_contents($cacheFile);
-        // Zwróć z cache, jeśli nie jest pusty
-        return !empty($cachedTitle) ? $cachedTitle : $defaultTitle; 
+        $cachedData = json_decode(file_get_contents($cacheFile), true);
+        // Zwróć dane z cache, jeśli są poprawne (tablica z kluczem 'title')
+        if (is_array($cachedData) && isset($cachedData['title'])) {
+            return $cachedData;
+        }
     }
 
     // Jeśli nie ma w cache, pobierz z API
@@ -137,26 +142,38 @@ function getNotionPageTitle($pageId, $apiKey, $cacheDir, $cacheExpiration) {
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
     
-    $pageTitle = $defaultTitle; // Ustaw domyślny na start
+    $result = $defaultResult; // Ustaw domyślny wynik
 
     if ($httpCode == 200) {
         $data = json_decode($response, true);
-        // Szukamy tytułu w strukturze odpowiedzi API v1
+        
+        // Pobierz tytuł (jak poprzednio)
         if (isset($data['properties']['title']['title'][0]['plain_text'])) {
-            $pageTitle = $data['properties']['title']['title'][0]['plain_text'];
+            $result['title'] = $data['properties']['title']['title'][0]['plain_text'];
         } elseif (isset($data['properties']['Name']['title'][0]['plain_text'])) {
-            // Czasami główna właściwość tytułowa nazywa się "Name"
-             $pageTitle = $data['properties']['Name']['title'][0]['plain_text'];
+            $result['title'] = $data['properties']['Name']['title'][0]['plain_text'];
+        } else {
+             $result['title'] = $defaultTitle; // Użyj domyślnego jeśli nie znaleziono
         }
-         // Zapisz tytuł do cache (nawet jeśli jest pusty, aby uniknąć ponownych prób w krótkim czasie)
-         file_put_contents($cacheFile, $pageTitle);
+
+        // Pobierz URL okładki
+        if (isset($data['cover'])) {
+            if ($data['cover']['type'] === 'external' && isset($data['cover']['external']['url'])) {
+                $result['coverUrl'] = $data['cover']['external']['url'];
+            } elseif ($data['cover']['type'] === 'file' && isset($data['cover']['file']['url'])) {
+                $result['coverUrl'] = $data['cover']['file']['url'];
+            }
+        }
+        
+        // Zapisz cały wynik (tablicę) do cache jako JSON
+        file_put_contents($cacheFile, json_encode($result));
+
     } else {
-        error_log("Nie można pobrać tytułu strony Notion dla ID: {$pageId}. Kod: {$httpCode}");
-        // Nie zapisuj cache w przypadku błędu, aby spróbować ponownie później
-        // Zwracamy $defaultTitle
+        error_log("Nie można pobrać danych strony Notion (tytuł/okładka) dla ID: {$pageId}. Kod: {$httpCode}");
+        // Nie zapisuj cache w przypadku błędu, zwracamy $defaultResult
     }
 
-    return $pageTitle;
+    return $result;
 }
 
 // --- ZAKTUALIZOWANA Funkcja formatRichText (z pobieraniem tytułu dla wzmianek) ---
@@ -183,7 +200,7 @@ function formatRichText($richTextArray, $apiKey, $cacheDir, $cacheExpiration) {
                 
                 // Użyj pobranego tytułu, jeśli nie jest pusty i różni się od domyślnego z getNotionPageTitle
                 if (!empty($fetchedTitle) && $fetchedTitle !== 'Moja strona z zawartością Notion') { 
-                    $mentionedPageTitle = $fetchedTitle;
+                    $mentionedPageTitle = $fetchedTitle['title'];
                 } else {
                     // Jeśli pobieranie się nie powiodło lub zwróciło domyślny tytuł, użyj ID jako fallback
                     // Można też użyć $richText['plain_text'] jako ostateczności, jeśli $fetchedTitle jest pusty
@@ -526,6 +543,10 @@ $pageNotFound = false;
 $defaultTitle = 'Moja strona z zawartością Notion'; // Zachowaj domyślny
 $pageTitle = $defaultTitle; 
 $mainPageTitle = $defaultTitle; // Zainicjuj tytuł strony głównej
+$ogTitle = $defaultTitle; 
+$metaDescription = 'Zawartość strony wyświetlana z Notion.'; 
+$currentUrl = ''; 
+$pageCoverUrl = null; // Zmienna na URL okładki
 
 // Określ ID bieżącej strony
 if (empty($requestPath)) {
@@ -536,12 +557,6 @@ if (empty($requestPath)) {
         $pageNotFound = true; 
     }
 }
-
-$htmlContent = '';
-$errorMessage = '';
-$ogTitle = $defaultTitle; // Tytuł dla Open Graph
-$metaDescription = 'Zawartość strony wyświetlana z Notion2Domain. więcej na https://github.com/auditlog/notion-to-own-domain'; // Domyślny opis
-$currentUrl = ''; // Pełny URL bieżącej strony
 
 // Ustal pełny URL (podstawowa wersja - może wymagać dostosowania do serwera)
 if (isset($_SERVER['HTTP_HOST'])) {
@@ -559,23 +574,26 @@ if ($pageNotFound) {
     $metaDescription = 'Żądana strona nie została znaleziona.';
 
 } elseif ($currentPageId) {
-    // Pobierz tytuł bieżącej strony (głównej lub podstrony)
-    $pageTitle = getNotionPageTitle($currentPageId, $notionApiKey, $cacheDir, $cacheExpiration);
-    
-    // Ustal tytuł dla Open Graph
-    if (empty($requestPath)) { // Strona główna
+    // --- Pobierz dane strony (tytuł i okładkę) ---
+    $pageData = getNotionPageTitle($currentPageId, $notionApiKey, $cacheDir, $cacheExpiration);
+    $pageTitle = $pageData['title'];
+    $pageCoverUrl = $pageData['coverUrl']; // Zapisz URL okładki
+
+    // Ustal tytuł dla Open Graph i tytuł strony głównej (jak poprzednio)
+    if (empty($requestPath)) { 
         $ogTitle = $pageTitle;
-        $mainPageTitle = $pageTitle; // Główny tytuł to tytuł bieżącej strony
-    } else { // Podstrona
-        // Pobierz tytuł strony głównej
-        $mainPageTitle = getNotionPageTitle($notionPageId, $notionApiKey, $cacheDir, $cacheExpiration);
-        $ogTitle = $mainPageTitle . ' - ' . $pageTitle; // Format: Tytuł Główny - Tytuł Podstrony
+        $mainPageTitle = $pageTitle; 
+    } else { 
+        // Pobierz dane strony głównej (potrzebne dla og:title i breadcrumbs)
+        $mainPageData = getNotionPageTitle($notionPageId, $notionApiKey, $cacheDir, $cacheExpiration);
+        $mainPageTitle = $mainPageData['title'];
+        $ogTitle = $mainPageTitle . ' - ' . $pageTitle; 
     }
+    
     // Ustal opis (można go ulepszyć, np. biorąc fragment tekstu)
     $metaDescription = "Zobacz zawartość strony: " . $pageTitle . ($mainPageTitle !== $pageTitle ? " (część: " . $mainPageTitle . ")" : "") . ". Wyświetlane z Notion.";
     // Ogranicz długość opisu dla bezpieczeństwa
     $metaDescription = mb_substr($metaDescription, 0, 160); 
-
 
     // Pobierz treść strony
     $notionData = getNotionContent($currentPageId, $notionApiKey, $cacheDir, $cacheExpiration);
@@ -622,7 +640,7 @@ if ($pageNotFound) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     
     <!-- Dynamiczny tytuł strony -->
-    <title><?php echo htmlspecialchars($pageTitle) . ($mainPageTitle !== $pageTitle ? ' - ' . htmlspecialchars($mainPageTitle) : ''); ?></title> 
+    <title><?php echo htmlspecialchars($pageTitle) . ($mainPageTitle !== $pageTitle && !empty($requestPath) ? ' - ' . htmlspecialchars($mainPageTitle) : ''); ?></title> 
     
     <!-- Meta tagi SEO i dla robotów -->
     <meta name="description" content="<?php echo htmlspecialchars($metaDescription); ?>">
@@ -644,9 +662,18 @@ if ($pageNotFound) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.24.1/themes/prism.css">
 </head>
 <body>
+
+    <?php // --- OKŁADKA PRZENIESIONA TUTAJ (nad kontenerem) --- ?>
+    <?php if ($pageCoverUrl): ?>
+        <div class="page-cover-fullwidth-wrapper">
+            <img src="<?php echo htmlspecialchars($pageCoverUrl); ?>" alt="Okładka strony: <?php echo htmlspecialchars($pageTitle); ?>" class="page-cover-fullwidth-image">
+        </div>
+    <?php endif; ?>
+    <?php // --- KONIEC BLOKU OKŁADKI --- ?>
+
     <div class="container">
         <header>
-             <h1><a href="/" style="color: inherit; text-decoration: none;"><?php echo htmlspecialchars($pageTitle); ?></a></h1> 
+             <h1><a href="/" style="color: inherit; text-decoration: none;"><?php echo htmlspecialchars($pageTitle); ?></a></h1>
              <?php if (!empty($requestPath) && !$pageNotFound && $currentPageId !== $notionPageId): ?>
                 <nav aria-label="breadcrumb">
                     <ol style="list-style: none; padding: 0; margin: 10px 0 0 0;">
