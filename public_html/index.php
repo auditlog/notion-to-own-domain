@@ -597,6 +597,12 @@ if ($pageNotFound) {
     } else {
         // Renderuj zawartość do HTML
         $htmlContent = notionToHtml($notionContent, $notionApiKey, $cacheDir, $cacheExpiration);
+
+        // --- POPRAWIONA LINIA: Usuwanie bloków z encjami HTML ---
+        // Szukaj &lt;hide&gt; ... &lt;/hide&gt; zamiast <hide>...</hide>
+        $htmlContent = preg_replace('/&lt;hide&gt;.*?&lt;\/hide&gt;/si', '', $htmlContent);
+        // --- KONIEC POPRAWIONEJ LINII ---
+
     }
 } else {
     // Sytuacja awaryjna - nie powinno się zdarzyć przy poprawnej logice

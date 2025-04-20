@@ -19,6 +19,8 @@ This is a simple PHP project designed to fetch content from a specific Notion pa
 *   **JavaScript Enhancements**:
     *   Automatic Table of Contents generation based on H1/H2/H3 headings.
     *   Simple lightbox effect for images.
+*   **Content Hiding**: Allows hiding specific sections of Notion content from the rendered webpage by wrapping them in `<hide>` and `</hide>` tags within the Notion page's text blocks. This is processed after the HTML is generated.
+    *   **Example Use Case:** If you provide navigation to subpages within a table or main text, you can hide the default list of subpage links (generated from Notion's `child_page` blocks) by placing `<hide>` before the first child page block and `</hide>` after the last one in your Notion document.
 *   **Basic Error Handling**: Includes a simple `error.php` page for 404 and 500 errors.
 *   **Simple Setup**: Requires minimal configuration.
 
@@ -35,7 +37,7 @@ This is a simple PHP project designed to fetch content from a specific Notion pa
 │   ├── js/
 │   │   └── main.js     # Main JavaScript file (TOC, lightbox)
 │   ├── .htaccess       # Apache configuration (routing, SetEnv, cache, errors)
-│   ├── index.php       # Main application file (routing, API calls, HTML/meta rendering)
+│   ├── index.php       # Main application file (routing, API calls, HTML/meta rendering, hide tag processing)
 │   ├── error.php       # Simple error page handler
 │   └── robots.txt      # Instructions for web crawlers and AI bots
 ├── .gitignore          # Specifies intentionally untracked files for Git
