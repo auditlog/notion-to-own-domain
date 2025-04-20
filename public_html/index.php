@@ -523,36 +523,64 @@ $requestPath = trim($requestPath, '/'); // Usuń skrajne slashe
 
 $currentPageId = null;
 $pageNotFound = false;
-$pageTitle = 'Moja strona z zawartością Notion'; // Domyślny tytuł
+$defaultTitle = 'Moja strona z zawartością Notion'; // Zachowaj domyślny
+$pageTitle = $defaultTitle; 
+$mainPageTitle = $defaultTitle; // Zainicjuj tytuł strony głównej
 
+// Określ ID bieżącej strony
 if (empty($requestPath)) {
-    // Strona główna
-    $currentPageId = $notionPageId; // Użyj ID z config.php
+    $currentPageId = $notionPageId; 
 } else {
-    // Podstrona - spróbuj znaleźć jej ID
     $currentPageId = findNotionSubpageId($notionPageId, $requestPath, $notionApiKey, $cacheDir, $cacheExpiration);
     if ($currentPageId === null) {
-        $pageNotFound = true; // Nie znaleziono podstrony
+        $pageNotFound = true; 
     }
 }
 
 $htmlContent = '';
 $errorMessage = '';
+$ogTitle = $defaultTitle; // Tytuł dla Open Graph
+$metaDescription = 'Zawartość strony wyświetlana z Notion2Domain. więcej na https://github.com/auditlog/notion-to-own-domain'; // Domyślny opis
+$currentUrl = ''; // Pełny URL bieżącej strony
 
+// Ustal pełny URL (podstawowa wersja - może wymagać dostosowania do serwera)
+if (isset($_SERVER['HTTP_HOST'])) {
+    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
+    $currentUrlPath = empty($requestPath) ? '/' : '/' . $requestPath;
+    $currentUrl = $protocol . $_SERVER['HTTP_HOST'] . $currentUrlPath;
+}
+
+// Procesowanie w zależności od znalezionego ID
 if ($pageNotFound) {
-    // Ustaw kod odpowiedzi HTTP na 404
     http_response_code(404);
     $errorMessage = "Nie znaleziono strony dla ścieżki: /" . htmlspecialchars($requestPath);
-    $pageTitle = 'Nie znaleziono strony'; // Zaktualizuj tytuł dla 404
-} elseif ($currentPageId) {
-    // --- Pobierz tytuł strony ---
-    $pageTitle = getNotionPageTitle($currentPageId, $notionApiKey, $cacheDir, $cacheExpiration);
+    $pageTitle = 'Nie znaleziono strony'; 
+    $ogTitle = $pageTitle;
+    $metaDescription = 'Żądana strona nie została znaleziona.';
 
-    // Pobierz zawartość dla znalezionego ID (głównej lub podstrony)
+} elseif ($currentPageId) {
+    // Pobierz tytuł bieżącej strony (głównej lub podstrony)
+    $pageTitle = getNotionPageTitle($currentPageId, $notionApiKey, $cacheDir, $cacheExpiration);
+    
+    // Ustal tytuł dla Open Graph
+    if (empty($requestPath)) { // Strona główna
+        $ogTitle = $pageTitle;
+        $mainPageTitle = $pageTitle; // Główny tytuł to tytuł bieżącej strony
+    } else { // Podstrona
+        // Pobierz tytuł strony głównej
+        $mainPageTitle = getNotionPageTitle($notionPageId, $notionApiKey, $cacheDir, $cacheExpiration);
+        $ogTitle = $mainPageTitle . ' - ' . $pageTitle; // Format: Tytuł Główny - Tytuł Podstrony
+    }
+    // Ustal opis (można go ulepszyć, np. biorąc fragment tekstu)
+    $metaDescription = "Zobacz zawartość strony: " . $pageTitle . ($mainPageTitle !== $pageTitle ? " (część: " . $mainPageTitle . ")" : "") . ". Wyświetlane z Notion.";
+    // Ogranicz długość opisu dla bezpieczeństwa
+    $metaDescription = mb_substr($metaDescription, 0, 160); 
+
+
+    // Pobierz treść strony
     $notionData = getNotionContent($currentPageId, $notionApiKey, $cacheDir, $cacheExpiration);
     $notionContent = json_decode($notionData, true);
 
-    // Sprawdź, czy samo pobieranie z Notion nie zwróciło błędu
     if (isset($notionContent['error'])) {
         $errorMessage = $notionContent['error'];
         if (isset($notionContent['message'])) {
@@ -560,9 +588,11 @@ if ($pageNotFound) {
         }
         // Jeśli Notion zwróciło 404 dla podanego ID, traktuj to jako błąd serwera lub konfiguracji
         if (($notionContent['response_code'] ?? null) === 404) {
-             http_response_code(500); // Błąd wewnętrzny, bo ID strony powinno być poprawne
+             http_response_code(500); 
              $errorMessage = "Błąd konfiguracji: Nie można znaleźć strony Notion o podanym ID ({$currentPageId}). Sprawdź ID w konfiguracji lub czy strona nie została usunięta.";
-             $pageTitle = 'Błąd konfiguracji'; // Zaktualizuj tytuł dla błędu
+             $pageTitle = 'Błąd konfiguracji'; 
+             $ogTitle = $pageTitle;
+             $metaDescription = 'Wystąpił błąd podczas próby załadowania strony z Notion.';
         }
     } else {
         // Renderuj zawartość do HTML
@@ -572,7 +602,9 @@ if ($pageNotFound) {
     // Sytuacja awaryjna - nie powinno się zdarzyć przy poprawnej logice
     http_response_code(500);
     $errorMessage = "Wystąpił nieoczekiwany błąd przy określaniu strony do wyświetlenia.";
-    $pageTitle = 'Błąd serwera'; // Zaktualizuj tytuł dla błędu 500
+    $pageTitle = 'Błąd serwera'; 
+    $ogTitle = $pageTitle;
+    $metaDescription = 'Wystąpił wewnętrzny błąd serwera.';
 }
 
 ?>
@@ -582,23 +614,38 @@ if ($pageNotFound) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Użyj dynamicznego $pageTitle dla tagu <title> -->
-    <title><?php echo htmlspecialchars($pageTitle); ?> - Moja strona z Notion</title>
-    <link rel="stylesheet" href="/css/style.css">
+    
+    <!-- Dynamiczny tytuł strony -->
+    <title><?php echo htmlspecialchars($pageTitle) . ($mainPageTitle !== $pageTitle ? ' - ' . htmlspecialchars($mainPageTitle) : ''); ?></title> 
+    
+    <!-- Meta tagi SEO i dla robotów -->
+    <meta name="description" content="<?php echo htmlspecialchars($metaDescription); ?>">
+    <meta name="robots" content="noindex, nofollow"> 
+    <!-- Dodatkowa dyrektywa dla Google (choć robots.txt jest ważniejszy dla AI) -->
+    <meta name="googlebot" content="noindex, nofollow"> 
+
+    <!-- Meta tagi Open Graph dla social media -->
+    <meta property="og:title" content="<?php echo htmlspecialchars($ogTitle); ?>">
+    <meta property="og:description" content="<?php echo htmlspecialchars($metaDescription); ?>">
+    <meta property="og:type" content="website">
+    <?php if (!empty($currentUrl)): ?>
+    <meta property="og:url" content="<?php echo htmlspecialchars($currentUrl); ?>">
+    <?php endif; ?>
+    <!-- Możesz dodać og:image jeśli masz stałe logo lub sposób na pobranie obrazka strony -->
+    <!-- <meta property="og:image" content="URL_DO_OBRAZKA"> -->
+
+    <link rel="stylesheet" href="/css/style.css"> 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.24.1/themes/prism.css">
 </head>
 <body>
     <div class="container">
         <header>
-             <!-- Użyj dynamicznego $pageTitle w nagłówku H1 -->
-            <h1><a href="/" style="color: inherit; text-decoration: none;"><?php echo htmlspecialchars($pageTitle); ?></a></h1>
-             <?php if (!empty($requestPath) && !$pageNotFound && $currentPageId !== $notionPageId): // Dodano warunek, aby nie pokazywać breadcrumbs dla strony głównej ?>
+             <h1><a href="/" style="color: inherit; text-decoration: none;"><?php echo htmlspecialchars($pageTitle); ?></a></h1> 
+             <?php if (!empty($requestPath) && !$pageNotFound && $currentPageId !== $notionPageId): ?>
                 <nav aria-label="breadcrumb">
                     <ol style="list-style: none; padding: 0; margin: 10px 0 0 0;">
-                        <!-- Link do strony głównej, pobierz jej tytuł -->
-                        <?php $mainPageTitle = getNotionPageTitle($notionPageId, $notionApiKey, $cacheDir, $cacheExpiration); ?>
                         <li style="display: inline;"><a href="/"><?php echo htmlspecialchars($mainPageTitle); ?></a> / </li>
-                        <li style="display: inline;"><?php echo htmlspecialchars($pageTitle); // Tytuł bieżącej podstrony ?></li>
+                        <li style="display: inline;"><?php echo htmlspecialchars($pageTitle); ?></li>
                     </ol>
                 </nav>
              <?php endif; ?>
@@ -622,7 +669,7 @@ if ($pageNotFound) {
         </footer>
     </div>
     
-    <script src="/js/main.js"></script>
+    <script src="/js/main.js"></script> 
     <script src="https://cdn.jsdelivr.net/npm/prismjs@1.24.1/prism.min.js"></script>
 </body>
 </html>

@@ -1,0 +1,24 @@
+# Blokowanie wszystkich standardowych robotów przed indeksowaniem całej strony
+User-agent: *
+Disallow: /
+
+# Jawne blokowanie popularnych robotów AI przed dostępem do całej strony
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+
+# Możesz dodać więcej User-agentów w miarę pojawiania się nowych robotów AI 
