@@ -1,6 +1,28 @@
 <?php
+// --- START SESJI ---
+// Musi być na samym początku pliku
+session_start(); 
+// --- KONIEC START SESJI ---
+
 // Dołączenie konfiguracji (poza katalogiem publicznym)
 require_once '../private/config.php';
+
+// --- OBSŁUGA WERYFIKACJI HASŁA ---
+$passwordVerified = $_SESSION['password_verified'] ?? false;
+$passwordError = false;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content_password'])) {
+    if ($_POST['content_password'] === $contentPassword) {
+        $_SESSION['password_verified'] = true;
+        $passwordVerified = true;
+        // Przekieruj, aby uniknąć ponownego wysłania formularza przy odświeżeniu
+        header('Location: ' . $_SERVER['REQUEST_URI']);
+        exit;
+    } else {
+        $passwordError = true;
+    }
+}
+// --- KONIEC OBSŁUGI WERYFIKACJI HASŁA ---
 
 // Funkcja pobierająca zawartość z Notion
 function getNotionContent($pageId, $apiKey, $cacheDir, $cacheExpiration) {
@@ -532,6 +554,31 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
     return $html;
 }
 
+// --- NOWA FUNKCJA: Przetwarza znaczniki <pass> ---
+function processPasswordTags($html, $isVerified, $error) {
+    // Szukaj &lt;pass&gt; ... &lt;/pass&gt; (po przetworzeniu przez htmlspecialchars)
+    return preg_replace_callback('/&lt;pass&gt;(.*?)&lt;\/pass&gt;/si', function($matches) use ($isVerified, $error) {
+        if ($isVerified) {
+            // Zwróć wewnętrzną treść (bez tagów)
+            return $matches[1]; 
+        } else {
+            // Zwróć formularz hasła
+            $form = '<div class="password-protected-content">';
+            $form .= '<h4>Ta treść jest chroniona hasłem</h4>';
+            if ($error) {
+                $form .= '<p style="color: red;">Nieprawidłowe hasło.</p>';
+            }
+            $form .= '<form method="post" action="' . htmlspecialchars($_SERVER['REQUEST_URI']) . '">'; // Użyj bieżącego URI
+            $form .= '<label for="content_password">Wprowadź hasło:</label> ';
+            $form .= '<input type="password" name="content_password" id="content_password" required> ';
+            $form .= '<button type="submit">Odblokuj</button>';
+            $form .= '</form>';
+            $form .= '</div>';
+            return $form;
+        }
+    }, $html);
+}
+
 // Główna logika aplikacji
 
 // Odczytaj ścieżkę z parametru GET dodanego przez .htaccess
@@ -547,6 +594,8 @@ $ogTitle = $defaultTitle;
 $metaDescription = 'Zawartość strony wyświetlana z Notion.'; 
 $currentUrl = ''; 
 $pageCoverUrl = null; // Zmienna na URL okładki
+$errorMessage = null; // Zainicjuj $errorMessage
+$htmlContent = ''; // Zainicjuj $htmlContent
 
 // Określ ID bieżącej strony
 if (empty($requestPath)) {
@@ -617,10 +666,12 @@ if ($pageNotFound) {
         $htmlContent = notionToHtml($notionContent, $notionApiKey, $cacheDir, $cacheExpiration);
 
         // --- POPRAWIONA LINIA: Usuwanie bloków z encjami HTML ---
-        // Szukaj &lt;hide&gt; ... &lt;/hide&gt; zamiast <hide>...</hide>
         $htmlContent = preg_replace('/&lt;hide&gt;.*?&lt;\/hide&gt;/si', '', $htmlContent);
-        // --- KONIEC POPRAWIONEJ LINII ---
-
+        
+        // --- NOWA LINIA: Przetwarzanie znaczników <pass> ---
+        // Przekazujemy wynik weryfikacji hasła ($passwordVerified) i ewentualny błąd ($passwordError)
+        $htmlContent = processPasswordTags($htmlContent, $passwordVerified, $passwordError);
+        // --- KONIEC NOWEJ LINII ---
     }
 } else {
     // Sytuacja awaryjna - nie powinno się zdarzyć przy poprawnej logice
@@ -660,6 +711,30 @@ if ($pageNotFound) {
 
     <link rel="stylesheet" href="/css/style.css"> 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.24.1/themes/prism.css">
+
+    <!-- Dodatkowe style dla formularza hasła (opcjonalnie) -->
+    <style>
+        .password-protected-content {
+            border: 1px solid #ccc;
+            padding: 15px;
+            margin: 15px 0;
+            background-color: #f9f9f9;
+        }
+        .password-protected-content h4 {
+            margin-top: 0;
+        }
+        .password-protected-content label {
+            margin-right: 5px;
+        }
+        .password-protected-content input[type="password"] {
+            padding: 5px;
+        }
+        .password-protected-content button {
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+    </style>
+
 </head>
 <body>
 

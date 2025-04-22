@@ -17,6 +17,10 @@ $cacheExpiration = 5;
 // Katalog cache
 $cacheDir = __DIR__ . '/cache/';
 
+// --- NOWA ZMIENNA: Hasło do ukrytej treści ---
+$contentPassword = 'twoje_sekretne_haslo'; // Zmień na silne hasło! Używane przez tagi <pass>
+// --- KONIEC NOWEJ ZMIENNEJ ---
+
 // Upewnij się, że katalog cache istnieje
 if (!file_exists($cacheDir) && !is_dir($cacheDir)) {
     if (!mkdir($cacheDir, 0755, true)) {

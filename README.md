@@ -21,6 +21,7 @@ This is a simple PHP project designed to fetch content from a specific Notion pa
     *   Simple lightbox effect for images.
 *   **Content Hiding**: Allows hiding specific sections of Notion content from the rendered webpage by wrapping them in `<hide>` and `</hide>` tags within the Notion page's text blocks. This is processed after the HTML is generated.
     *   **Example Use Case:** If you provide navigation to subpages within a table or main text, you can hide the default list of subpage links (generated from Notion's `child_page` blocks) by placing `<hide>` before the first child page block and `</hide>` after the last one in your Notion document.
+*   **Password Protection**: Allows protecting specific sections of Notion content with a password. Wrap the content in `<pass>` and `</pass>` tags within the Notion page's text blocks. Users will be prompted for a password (defined in `private/config.php`) to view the content. This feature uses PHP sessions to remember verification status.
 *   **Basic Error Handling**: Includes a simple `error.php` page for 404 and 500 errors.
 *   **Simple Setup**: Requires minimal configuration.
 
@@ -30,14 +31,14 @@ This is a simple PHP project designed to fetch content from a specific Notion pa
 .
 ├── private/
 │   ├── cache/          # Cache directory (needs write permissions for the web server)
-│   └── config.php      # Configuration file (API key, page ID, cache settings) - **DO NOT COMMIT**
+│   └── config.php      # Configuration file (API key, page ID, cache, password) - **DO NOT COMMIT**
 ├── public_html/
 │   ├── css/
 │   │   └── style.css   # Main stylesheet
 │   ├── js/
 │   │   └── main.js     # Main JavaScript file (TOC, lightbox)
 │   ├── .htaccess       # Apache configuration (routing, SetEnv, cache, errors)
-│   ├── index.php       # Main application file (routing, API calls, HTML/meta rendering, hide tag processing)
+│   ├── index.php       # Main application file (routing, API calls, HTML/meta rendering, tag processing)
 │   ├── error.php       # Simple error page handler
 │   └── robots.txt      # Instructions for web crawlers and AI bots
 ├── .gitignore          # Specifies intentionally untracked files for Git
@@ -55,14 +56,15 @@ This is a simple PHP project designed to fetch content from a specific Notion pa
     *   **Method 1 (Recommended: Environment Variable):** Set the `NOTION_API_KEY` environment variable on your server (e.g., via hosting panel or `SetEnv` in `.htaccess`).
     *   **Method 2 (Alternative: Direct Edit - Less Secure):** Edit `private/config.php` and assign your key to `$notionApiKey` within the `if` block. **Ensure `private/config.php` is in `.gitignore`.**
 3.  **Configure Notion Page ID:** Edit `private/config.php` and set `$notionPageId` to your main Notion page ID.
-4.  **Configure Cache:** Ensure `private/cache/` exists and is writable by the web server. Adjust `$cacheExpiration` in `config.php` if needed.
-5.  **Web Server Configuration (Apache):** Ensure `.htaccess` overrides are allowed (`AllowOverride All`) and `mod_rewrite` / `mod_env` are enabled.
-6.  **(Optional) Review `public_html/robots.txt`:** The default file blocks most indexing. Adjust if you have different requirements (not recommended if the content mirrors Notion directly).
-7.  **Access the site:** Navigate to the root directory corresponding to `public_html` in your browser.
+4.  **Configure Content Password (Optional):** Edit `private/config.php` and set a strong `$contentPassword` if you plan to use the `<pass>` tag feature.
+5.  **Configure Cache:** Ensure `private/cache/` exists and is writable by the web server. Adjust `$cacheExpiration` in `config.php` if needed.
+6.  **Web Server Configuration (Apache):** Ensure `.htaccess` overrides are allowed (`AllowOverride All`) and `mod_rewrite` / `mod_env` are enabled. PHP sessions must also be enabled.
+7.  **(Optional) Review `public_html/robots.txt`:** The default file blocks most indexing. Adjust if you have different requirements (not recommended if the content mirrors Notion directly).
+8.  **Access the site:** Navigate to the root directory corresponding to `public_html` in your browser.
 
 ## Dependencies
 
-*   PHP (tested on 7.x/8.x, requires `curl` extension)
+*   PHP (tested on 7.x/8.x, requires `curl` extension, session support)
 *   Web server (Apache with `mod_rewrite`, `mod_env` recommended)
 *   Notion API Key
 
@@ -76,4 +78,5 @@ This is a simple PHP project designed to fetch content from a specific Notion pa
 *   **Limited Block Support**: Complex blocks like databases are not supported.
 *   **Deeply Nested Blocks**: May not render perfectly.
 *   **URL Normalization**: Basic title-to-URL conversion might have edge cases.
-*   **No Real-time Updates**: Content updates rely on cache expiration. 
+*   **No Real-time Updates**: Content updates rely on cache expiration.
+*   **Security**: The password protection is basic and relies on PHP sessions. It's suitable for low-sensitivity content. Avoid storing highly confidential information this way. 
