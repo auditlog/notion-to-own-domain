@@ -7,6 +7,16 @@ session_start();
 // Dołączenie konfiguracji (poza katalogiem publicznym)
 require_once '../private/config.php';
 
+// --- DEBUGOWANIE API ---
+$debugApiCalls = false; // Ustaw na true, aby logować wywołania API
+
+function logApiCall($endpoint, $status) {
+    global $debugApiCalls;
+    if ($debugApiCalls) {
+        error_log("Notion API Call: $endpoint, Status: $status");
+    }
+}
+
 // --- OBSŁUGA WERYFIKACJI HASŁA ---
 $passwordVerified = $_SESSION['password_verified'] ?? false;
 $passwordError = false;
@@ -24,38 +34,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content_password'])) 
 }
 // --- KONIEC OBSŁUGI WERYFIKACJI HASŁA ---
 
+// --- MECHANIZM THROTTLINGU DLA API ---
+function throttledApiCall($url, $headers) {
+    static $lastRequestTime = 0;
+    
+    $currentTime = microtime(true);
+    $timeSinceLastRequest = $currentTime - $lastRequestTime;
+    
+    // Zapewnij minimum 334ms między zapytaniami (ok. 3 zapytania/sekundę)
+    if ($timeSinceLastRequest < 0.334) {
+        usleep(ceil((0.334 - $timeSinceLastRequest) * 1000000));
+    }
+    
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $lastRequestTime = microtime(true);
+    
+    // Logowanie wywołania API
+    logApiCall($url, $httpCode);
+    
+    return ['response' => $response, 'http_code' => $httpCode];
+}
+// --- KONIEC MECHANIZMU THROTTLINGU ---
+
 // Funkcja pobierająca zawartość z Notion
 function getNotionContent($pageId, $apiKey, $cacheDir, $cacheExpiration) {
+    global $cacheDurations;
+    
     // Sprawdź czy istnieje ważny plik cache
-    $cacheFile = $cacheDir . 'content_' . md5($pageId) . '.cache';
+    $cacheFile = $cacheDir . 'content_' . md5($pageId) . '_v2.cache';
     
     if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < $cacheExpiration)) {
         return file_get_contents($cacheFile);
     }
     
-    // Jeśli nie ma cache, pobierz z API
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, "https://api.notion.com/v1/blocks/{$pageId}/children?page_size=100");
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    // Jeśli nie ma cache, pobierz z API z throttlingiem
+    $headers = [
         'Authorization: Bearer ' . $apiKey,
         'Notion-Version: 2022-06-28'
-    ]);
+    ];
     
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $url = "https://api.notion.com/v1/blocks/{$pageId}/children?page_size=100";
+    $apiResult = throttledApiCall($url, $headers);
+    
+    $response = $apiResult['response'];
+    $httpCode = $apiResult['http_code'];
     
     if ($httpCode != 200) {
-        $error = curl_error($ch);
-        curl_close($ch);
         return json_encode([
             'error' => 'Nie można pobrać zawartości z Notion. Kod: ' . $httpCode,
-            'message' => $error,
+            'message' => curl_error($ch) ?? 'Nieznany błąd',
             'response_code' => $httpCode
         ]);
     }
-    
-    curl_close($ch);
     
     // Zapisz wynik do cache
     file_put_contents($cacheFile, $response);
@@ -83,32 +121,36 @@ function normalizeTitleForPath($title) {
 
 // --- Zaktualizuj funkcję findNotionSubpageId, aby używała nowej funkcji pomocniczej ---
 function findNotionSubpageId($parentPageId, $subpagePath, $apiKey, $cacheDir, $cacheExpiration) {
+    global $cacheDurations;
+    
     $subpagePath = trim(strtolower($subpagePath), '/'); 
     if (empty($subpagePath)) return null; 
 
-    $cacheFile = $cacheDir . 'subpages_' . md5($parentPageId) . '.cache';
+    // Użyj właściwej wartości cache dla podstron
+    $cacheDurationSubpages = $cacheDurations['subpages'] ?? $cacheExpiration;
+    $cacheFile = $cacheDir . 'subpages_' . md5($parentPageId) . '_v2.cache';
     $subpages = [];
 
-    if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < $cacheExpiration)) {
+    if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < $cacheDurationSubpages)) {
         $subpages = json_decode(file_get_contents($cacheFile), true);
          // Sprawdź, czy $subpages jest tablicą po dekodowaniu
          if (!is_array($subpages)) {
-            $subpages = []; // Zainicjuj jako pustą tablicę w razie błędu dekodowania
+            $subpages = []; // Zainicjuj jako pustą tablicą w razie błędu dekodowania
             // Opcjonalnie: usuń uszkodzony plik cache
             unlink($cacheFile); 
          }
     } else {
-        // Pobierz bloki potomne strony nadrzędnej
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, "https://api.notion.com/v1/blocks/{$parentPageId}/children?page_size=100");
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        // Pobierz bloki potomne strony nadrzędnej z throttlingiem
+        $headers = [
             'Authorization: Bearer ' . $apiKey,
             'Notion-Version: 2022-06-28'
-        ]);
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+        ];
+        
+        $url = "https://api.notion.com/v1/blocks/{$parentPageId}/children?page_size=100";
+        $apiResult = throttledApiCall($url, $headers);
+        
+        $response = $apiResult['response'];
+        $httpCode = $apiResult['http_code'];
 
         if ($httpCode == 200) {
             $data = json_decode($response, true);
@@ -137,13 +179,18 @@ function findNotionSubpageId($parentPageId, $subpagePath, $apiKey, $cacheDir, $c
 // --- ZMODYFIKOWANA FUNKCJA: Pobiera tytuł i URL okładki strony Notion ---
 // Zwraca: ['title' => string, 'coverUrl' => string|null]
 function getNotionPageTitle($pageId, $apiKey, $cacheDir, $cacheExpiration) {
-    // Zmieniono nazwę cache - przechowuje teraz obiekt/tablicę
-    $cacheFile = $cacheDir . 'pagedata_' . md5($pageId) . '.cache'; 
+    global $cacheDurations;
+    
+    // Użyj właściwej wartości cache dla metadanych strony
+    $cacheDurationPagedata = $cacheDurations['pagedata'] ?? $cacheExpiration;
+    
+    // Zmieniono nazwę cache - przechowuje teraz obiekt/tablicę i dodano wersjonowanie
+    $cacheFile = $cacheDir . 'pagedata_' . md5($pageId) . '_v2.cache'; 
     $defaultTitle = 'Moja strona z zawartością Notion'; 
     $defaultResult = ['title' => $defaultTitle, 'coverUrl' => null];
 
     // Sprawdź cache
-    if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < $cacheExpiration)) {
+    if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < $cacheDurationPagedata)) {
         $cachedData = json_decode(file_get_contents($cacheFile), true);
         // Zwróć dane z cache, jeśli są poprawne (tablica z kluczem 'title')
         if (is_array($cachedData) && isset($cachedData['title'])) {
@@ -151,18 +198,17 @@ function getNotionPageTitle($pageId, $apiKey, $cacheDir, $cacheExpiration) {
         }
     }
 
-    // Jeśli nie ma w cache, pobierz z API
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, "https://api.notion.com/v1/pages/{$pageId}");
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    // Jeśli nie ma w cache, pobierz z API z throttlingiem
+    $headers = [
         'Authorization: Bearer ' . $apiKey,
         'Notion-Version: 2022-06-28'
-    ]);
+    ];
     
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    $url = "https://api.notion.com/v1/pages/{$pageId}";
+    $apiResult = throttledApiCall($url, $headers);
+    
+    $response = $apiResult['response'];
+    $httpCode = $apiResult['http_code'];
     
     $result = $defaultResult; // Ustaw domyślny wynik
 
@@ -199,8 +245,8 @@ function getNotionPageTitle($pageId, $apiKey, $cacheDir, $cacheExpiration) {
 }
 
 // --- ZAKTUALIZOWANA Funkcja formatRichText (z pobieraniem tytułu dla wzmianek) ---
-// Dodano parametry $apiKey, $cacheDir, $cacheExpiration
-function formatRichText($richTextArray, $apiKey, $cacheDir, $cacheExpiration) {
+// Dodano parametry $apiKey, $cacheDir, $cacheExpiration i $mentionCache
+function formatRichText($richTextArray, $apiKey, $cacheDir, $cacheExpiration, $mentionCache = []) {
     $text = '';
     
     if (!is_array($richTextArray)) {
@@ -217,17 +263,26 @@ function formatRichText($richTextArray, $apiKey, $cacheDir, $cacheExpiration) {
                 $mentionedPageId = $richText['mention']['page']['id'];
                 $mentionedPageTitle = 'Untitled'; // Domyślny tytuł na wypadek błędu
 
-                // Spróbuj pobrać prawdziwy tytuł strony za pomocą istniejącej funkcji
-                $fetchedTitle = getNotionPageTitle($mentionedPageId, $apiKey, $cacheDir, $cacheExpiration);
-                
-                // Użyj pobranego tytułu, jeśli nie jest pusty i różni się od domyślnego z getNotionPageTitle
-                if (!empty($fetchedTitle) && $fetchedTitle !== 'Moja strona z zawartością Notion') { 
-                    $mentionedPageTitle = $fetchedTitle['title'];
+                // Najpierw sprawdź, czy tytuł jest w cache wzmianek
+                if (isset($mentionCache[$mentionedPageId]) && !empty($mentionCache[$mentionedPageId]['title'])) {
+                    $mentionedPageTitle = $mentionCache[$mentionedPageId]['title'];
+                    // Dodaj informację o wykorzystaniu cache w trybie debug
+                    if ($debugApiCalls) {
+                        error_log("Użyto cache wzmianki dla ID: {$mentionedPageId}, tytuł: {$mentionedPageTitle}");
+                    }
                 } else {
-                    // Jeśli pobieranie się nie powiodło lub zwróciło domyślny tytuł, użyj ID jako fallback
-                    // Można też użyć $richText['plain_text'] jako ostateczności, jeśli $fetchedTitle jest pusty
-                    $mentionedPageTitle = $richText['plain_text'] ?: $mentionedPageId; // Użyj plain_text jeśli jest, inaczej ID
-                    error_log("formatRichText: Nie udało się pobrać poprawnego tytułu dla strony ID: {$mentionedPageId}. Użyto: '{$mentionedPageTitle}'");
+                    // Jeśli nie ma w cache, użyj istniejącej funkcji (choć to nie powinno się często zdarzać)
+                    $fetchedTitle = getNotionPageTitle($mentionedPageId, $apiKey, $cacheDir, $cacheExpiration);
+                    
+                    // Użyj pobranego tytułu, jeśli nie jest pusty i różni się od domyślnego
+                    if (!empty($fetchedTitle) && $fetchedTitle !== 'Moja strona z zawartością Notion') { 
+                        $mentionedPageTitle = $fetchedTitle['title'];
+                    } else {
+                        // Jeśli pobieranie się nie powiodło lub zwróciło domyślny tytuł, użyj ID jako fallback
+                        // Można też użyć $richText['plain_text'] jako ostateczności, jeśli $fetchedTitle jest pusty
+                        $mentionedPageTitle = $richText['plain_text'] ?: $mentionedPageId; // Użyj plain_text jeśli jest, inaczej ID
+                        error_log("formatRichText: Nie udało się pobrać poprawnego tytułu dla strony ID: {$mentionedPageId}. Użyto: '{$mentionedPageTitle}'");
+                    }
                 }
 
                 // Zawsze próbuj wygenerować ścieżkę na podstawie (najlepiej pobranego) tytułu
@@ -270,7 +325,7 @@ function formatRichText($richTextArray, $apiKey, $cacheDir, $cacheExpiration) {
 }
 
 // Konwersja z formatu Notion na HTML (rozszerzona implementacja)
-function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
+function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $mentionCache = []) {
     $html = '';
     $inList = false;
     $listType = ''; // 'ul' lub 'ol'
@@ -310,8 +365,8 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
 
             switch ($currentBlockType) {
                 case 'paragraph':
-                    // Przekaż parametry do formatRichText
-                    $text = formatRichText($block['paragraph']['rich_text'], $apiKey, $cacheDir, $cacheExpiration); 
+                    // Przekaż parametry do formatRichText wraz z cache wzmianek
+                    $text = formatRichText($block['paragraph']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $mentionCache); 
                     if (!empty($text)) {
                         $html .= "<p>{$text}</p>\n";
                     } else {
@@ -330,14 +385,14 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
                     if (is_numeric($level) && $level >= 1 && $level <= 6) { 
                         $tagName = 'h' . $level; // Utwórz poprawny tag np. 'h1'
                         // Pobierz i sformatuj tekst nagłówka
-                        $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheExpiration);
+                        $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $mentionCache);
                         // Wygeneruj poprawny HTML
                         $html .= "<{$tagName}>{$text}</{$tagName}>\n";
                     } else {
                         // Logowanie błędu, jeśli typ nagłówka jest nieoczekiwany
                         error_log("Nieoczekiwany lub niepoprawny typ nagłówka w notionToHtml: " . $key);
                         // Można opcjonalnie wyświetlić tekst w paragrafie jako fallback
-                        $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheExpiration);
+                        $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $mentionCache);
                         $html .= "<p><strong>(Błąd nagłówka: {$key})</strong> {$text}</p>\n";
                     }
                     break; // Koniec przypadku dla nagłówków
@@ -346,7 +401,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
                 case 'numbered_list_item':
                     // Przekaż parametry do formatRichText
                     $key = $currentBlockType;
-                    $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheExpiration);
+                    $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $mentionCache);
                     if (!$inList || $listType !== 'ul') {
                         if($inList) $html .= "</{$listType}>\n"; // Zamknij jeśli była inna lista
                         $html .= "<ul>\n";
@@ -358,7 +413,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
                     
                 case 'to_do':
                     // Przekaż parametry do formatRichText
-                    $text = formatRichText($block['to_do']['rich_text'], $apiKey, $cacheDir, $cacheExpiration);
+                    $text = formatRichText($block['to_do']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $mentionCache);
                     $checked = $block['to_do']['checked'] ? ' checked' : '';
                     
                     if ($inList) {
@@ -378,7 +433,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
                     $caption = '';
                     if (isset($block['image']['caption']) && !empty($block['image']['caption'])) {
                         // Przekaż parametry do formatRichText
-                        $caption = formatRichText($block['image']['caption'], $apiKey, $cacheDir, $cacheExpiration);
+                        $caption = formatRichText($block['image']['caption'], $apiKey, $cacheDir, $cacheExpiration, $mentionCache);
                     }
                     
                     $imageUrl = '';
@@ -415,7 +470,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
                     
                     $language = isset($block['code']['language']) ? htmlspecialchars($block['code']['language']) : ''; // Zabezpiecz język
                     // formatRichText zwraca już HTML (np. z <strong>), nie należy go dodatkowo escapować htmlspecialchars
-                    $codeContent = formatRichText($block['code']['rich_text'], $apiKey, $cacheDir, $cacheExpiration); 
+                    $codeContent = formatRichText($block['code']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $mentionCache); 
                     // Dodaj klasę dla PrismJS (jeśli język jest znany)
                     $langClass = !empty($language) ? " class=\"language-{$language}\"" : '';
                     $html .= "<pre><code{$langClass}>{$codeContent}</code></pre>\n"; 
@@ -427,7 +482,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
                         $inList = false;
                     }
                     
-                    $text = formatRichText($block['quote']['rich_text'], $apiKey, $cacheDir, $cacheExpiration);
+                    $text = formatRichText($block['quote']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $mentionCache);
                     $html .= "<blockquote>{$text}</blockquote>\n";
                     break;
                     
@@ -437,7 +492,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
                         $inList = false;
                     }
                     
-                    $text = formatRichText($block['callout']['rich_text'], $apiKey, $cacheDir, $cacheExpiration);
+                    $text = formatRichText($block['callout']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $mentionCache);
                     $icon = '';
                     
                     if (isset($block['callout']['icon'])) {
@@ -481,7 +536,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
                                 foreach ($headerRow['table_row']['cells'] as $cell) {
                                     $tag = ($hasRowHeader && $cellIndex === 0) ? 'th' : 'th'; // Pierwsza komórka nagłówka może być pusta lub specjalna
                                     // Przekaż parametry do formatRichText dla komórki nagłówka
-                                    $cellContent = formatRichText($cell, $apiKey, $cacheDir, $cacheExpiration);
+                                    $cellContent = formatRichText($cell, $apiKey, $cacheDir, $cacheExpiration, $mentionCache);
                                     $html .= "<{$tag}>{$cellContent}</{$tag}>\n";
                                     $cellIndex++;
                                 }
@@ -579,6 +634,56 @@ function processPasswordTags($html, $isVerified, $error) {
     }, $html);
 }
 
+// --- PREFETCHING WZMIANEK STRON ---
+// Funkcja do wstępnego ładowania tytułów stron używanych we wzmiankach
+function prefetchMentionTitles($contentData, $apiKey, $cacheDir, $cacheExpiration) {
+    global $cacheDurations;
+    
+    $mentions = [];
+    
+    // Wyodrębnij wszystkie identyfikatory wzmianek ze strony JSON
+    $contentJson = json_encode($contentData);
+    preg_match_all('/"mention".*?"page".*?"id".*?"([a-f0-9-]+)"/', $contentJson, $matches);
+    
+    if (!empty($matches[1])) {
+        $uniqueMentionIds = array_unique($matches[1]);
+        $mentionCacheFile = $cacheDir . 'mentions_v2.cache';
+        $cachedMentions = [];
+        
+        // Wczytaj istniejące wzmianki z cache
+        if (file_exists($mentionCacheFile)) {
+            $cachedMentions = json_decode(file_get_contents($mentionCacheFile), true) ?: [];
+        }
+        
+        // Zidentyfikuj wzmianki, które trzeba pobrać
+        $toFetch = [];
+        foreach ($uniqueMentionIds as $id) {
+            if (!isset($cachedMentions[$id]) || 
+                (time() - ($cachedMentions[$id]['fetched_at'] ?? 0) > ($cacheDurations['mentions'] ?? $cacheExpiration))) {
+                $toFetch[] = $id;
+            }
+        }
+        
+        // Pobierz brakujące wzmianki (z respektowaniem limitu zapytań)
+        if (!empty($toFetch)) {
+            foreach ($toFetch as $id) {
+                $pageData = getNotionPageTitle($id, $apiKey, $cacheDir, $cacheExpiration);
+                $cachedMentions[$id] = [
+                    'title' => $pageData['title'],
+                    'fetched_at' => time()
+                ];
+            }
+            
+            // Zaktualizuj cache wzmianek
+            file_put_contents($mentionCacheFile, json_encode($cachedMentions));
+        }
+        
+        return $cachedMentions;
+    }
+    
+    return [];
+}
+
 // Główna logika aplikacji
 
 // Odczytaj ścieżkę z parametru GET dodanego przez .htaccess
@@ -596,6 +701,7 @@ $currentUrl = '';
 $pageCoverUrl = null; // Zmienna na URL okładki
 $errorMessage = null; // Zainicjuj $errorMessage
 $htmlContent = ''; // Zainicjuj $htmlContent
+$mentionCache = []; // Cache wzmianek stron
 
 // Określ ID bieżącej strony
 if (empty($requestPath)) {
@@ -662,8 +768,11 @@ if ($pageNotFound) {
              $metaDescription = 'Wystąpił błąd podczas próby załadowania strony z Notion.';
         }
     } else {
-        // Renderuj zawartość do HTML
-        $htmlContent = notionToHtml($notionContent, $notionApiKey, $cacheDir, $cacheExpiration);
+        // Prefetch wzmianek stron, aby przyspieszyć renderowanie
+        $mentionCache = prefetchMentionTitles($notionContent, $notionApiKey, $cacheDir, $cacheExpiration);
+        
+        // Renderuj zawartość do HTML z wykorzystaniem wcześniej pobranych danych wzmianek
+        $htmlContent = notionToHtml($notionContent, $notionApiKey, $cacheDir, $cacheExpiration, $mentionCache);
 
         // --- POPRAWIONA LINIA: Usuwanie bloków z encjami HTML ---
         $htmlContent = preg_replace('/&lt;hide&gt;.*?&lt;\/hide&gt;/si', '', $htmlContent);
