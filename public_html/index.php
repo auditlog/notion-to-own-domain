@@ -26,47 +26,102 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content_password'])) 
 
 // Funkcja pobierająca zawartość z Notion
 function getNotionContent($pageId, $apiKey, $cacheDir, $cacheExpiration) {
-    // Sprawdź czy istnieje ważny plik cache
     $cacheFile = $cacheDir . 'content_' . md5($pageId) . '.cache';
-    
+
     if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < $cacheExpiration)) {
-        return file_get_contents($cacheFile);
+        // Zwróć zdeserializowane dane, aby pętla działała poprawnie z cachem
+        $cachedContent = file_get_contents($cacheFile);
+        $decodedCachedContent = json_decode($cachedContent, true);
+        // Sprawdź, czy cache zawiera już zagregowane wyniki (np. po kluczu 'all_results')
+        // lub czy to stary format cache'u (tylko jedna strona)
+        // Na potrzeby tego przykładu zakładamy, że cache przechowuje już zagregowane wyniki.
+        // Jeśli nie, logika cachowania też musi być dostosowana.
+        if (isset($decodedCachedContent['all_results_aggregated'])) { // Wprowadźmy flagę/strukturę
+            return $cachedContent; // Zwróć oryginalny JSON, jeśli cache jest już kompletny
+        }
+        // Jeśli cache jest stary, można go zignorować i pobrać od nowa, lub próbować dopełnić.
+        // Dla uproszczenia, przy starym cache, pobierzemy od nowa.
     }
-    
-    // Jeśli nie ma cache, pobierz z API
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, "https://api.notion.com/v1/blocks/{$pageId}/children?page_size=100");
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Authorization: Bearer ' . $apiKey,
-        'Notion-Version: 2022-06-28'
-    ]);
-    
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    
-    if ($httpCode != 200) {
-        $error = curl_error($ch);
-        curl_close($ch);
-        return json_encode([
-            'error' => 'Nie można pobrać zawartości z Notion. Kod: ' . $httpCode,
-            'message' => $error,
-            'response_code' => $httpCode
+
+    $allResults = [];
+    $nextCursor = null;
+    $errorData = null; // Do przechowywania informacji o błędzie
+
+    do {
+        $url = "https://api.notion.com/v1/blocks/{$pageId}/children?page_size=100";
+        if ($nextCursor) {
+            $url .= "&start_cursor=" . urlencode($nextCursor);
+        }
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Authorization: Bearer ' . $apiKey,
+            'Notion-Version: 2022-06-28'
         ]);
+        // Upewnij się, że masz tu konfigurację SSL (np. curl.cainfo w php.ini)
+        // lub jeśli to konieczne (TYLKO DLA TESTÓW LOKALNYCH):
+        // curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        // curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($httpCode != 200) {
+            $errorData = [ // Zapisz dane błędu
+                'error' => 'Nie można pobrać zawartości z Notion. Kod: ' . $httpCode,
+                'message' => $curlError ?: 'Brak dodatkowych informacji o błędzie cURL.',
+                'response_code' => $httpCode
+            ];
+            break; // Przerwij pętlę w przypadku błędu
+        }
+
+        $data = json_decode($response, true);
+
+        if (isset($data['results']) && is_array($data['results'])) {
+            $allResults = array_merge($allResults, $data['results']);
+        } else {
+            // Jeśli 'results' nie ma, to może być błąd w odpowiedzi JSON od Notion
+            $errorData = [
+                'error' => 'Nieprawidłowa odpowiedź z API Notion.',
+                'message' => 'Brak klucza "results" w odpowiedzi.',
+                'response_code' => $httpCode
+            ];
+            break; 
+        }
+
+        $nextCursor = $data['next_cursor'] ?? null;
+        $hasMore = $data['has_more'] ?? false;
+
+    } while ($hasMore && $nextCursor);
+
+    if ($errorData) { // Jeśli wystąpił błąd w pętli
+        return json_encode($errorData);
     }
+
+    // Zbuduj ostateczną odpowiedź w formacie oczekiwanym przez resztę kodu
+    // (czyli z kluczem 'results' zawierającym wszystkie połączone wyniki)
+    $finalResponseData = [
+        'object' => 'list', // Typowy dla odpowiedzi z listą bloków
+        'results' => $allResults,
+        'has_more' => false, // Ponieważ pobraliśmy wszystko
+        'next_cursor' => null,
+        'all_results_aggregated' => true // Nasza flaga dla logiki cache
+    ];
     
-    curl_close($ch);
-    
-    // Zapisz wynik do cache
-    file_put_contents($cacheFile, $response);
-    return $response;
+    $finalJsonResponse = json_encode($finalResponseData);
+    file_put_contents($cacheFile, $finalJsonResponse);
+    return $finalJsonResponse;
 }
 
 // Funkcja do obsługi zagnieżdżonych bloków (do przyszłej implementacji)
-function fetchAndRenderChildren($blockId, $apiKey, $cacheDir, $cacheExpiration) {
+function fetchAndRenderChildren($blockId, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString = '') {
     $childrenData = getNotionContent($blockId, $apiKey, $cacheDir, $cacheExpiration);
     $childrenContent = json_decode($childrenData, true);
-    return notionToHtml($childrenContent, $apiKey, $cacheDir, $cacheExpiration);
+    return notionToHtml($childrenContent, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
 }
 
 // --- NOWA FUNKCJA POMOCNICZA: Normalizuje tytuł na potrzeby ścieżki URL ---
@@ -200,7 +255,7 @@ function getNotionPageTitle($pageId, $apiKey, $cacheDir, $cacheExpiration) {
 
 // --- ZAKTUALIZOWANA Funkcja formatRichText (z pobieraniem tytułu dla wzmianek) ---
 // Dodano parametry $apiKey, $cacheDir, $cacheExpiration
-function formatRichText($richTextArray, $apiKey, $cacheDir, $cacheExpiration) {
+function formatRichText($richTextArray, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString = '') {
     $text = '';
     
     if (!is_array($richTextArray)) {
@@ -218,14 +273,12 @@ function formatRichText($richTextArray, $apiKey, $cacheDir, $cacheExpiration) {
                 $mentionedPageTitle = 'Untitled'; // Domyślny tytuł na wypadek błędu
 
                 // Spróbuj pobrać prawdziwy tytuł strony za pomocą istniejącej funkcji
-                $fetchedTitle = getNotionPageTitle($mentionedPageId, $apiKey, $cacheDir, $cacheExpiration);
+                $fetchedPageData = getNotionPageTitle($mentionedPageId, $apiKey, $cacheDir, $cacheExpiration);
+                $mentionedPageTitle = $fetchedPageData['title'] ?? $mentionedPageTitle;
                 
                 // Użyj pobranego tytułu, jeśli nie jest pusty i różni się od domyślnego z getNotionPageTitle
-                if (!empty($fetchedTitle) && $fetchedTitle !== 'Moja strona z zawartością Notion') { 
-                    $mentionedPageTitle = $fetchedTitle['title'];
-                } else {
+                if (empty($mentionedPageTitle) || $mentionedPageTitle === 'Moja strona z zawartością Notion') { 
                     // Jeśli pobieranie się nie powiodło lub zwróciło domyślny tytuł, użyj ID jako fallback
-                    // Można też użyć $richText['plain_text'] jako ostateczności, jeśli $fetchedTitle jest pusty
                     $mentionedPageTitle = $richText['plain_text'] ?: $mentionedPageId; // Użyj plain_text jeśli jest, inaczej ID
                     error_log("formatRichText: Nie udało się pobrać poprawnego tytułu dla strony ID: {$mentionedPageId}. Użyto: '{$mentionedPageTitle}'");
                 }
@@ -234,7 +287,17 @@ function formatRichText($richTextArray, $apiKey, $cacheDir, $cacheExpiration) {
                 $path = normalizeTitleForPath($mentionedPageTitle); 
 
                 if (!empty($path)) {
-                    $formattedText = "<a href=\"/" . htmlspecialchars($path) . "\">" . htmlspecialchars($mentionedPageTitle) . "</a>";
+                    // Poprawione tworzenie pełnej ścieżki
+                    $basePath = !empty($currentUrlPathString) ? rtrim($currentUrlPathString, '/') : '';
+                    // Sprawdź, czy $path nie jest już pełną ścieżką zagnieżdżoną (np. po kliknięciu na link do pod-podstrony)
+                    // Ta logika jest bardziej skomplikowana, na razie upraszczamy do prostego łączenia,
+                    // zakładając, że wspomniana strona jest bezpośrednią podstroną bieżącego kontekstu.
+                    // Dla bardziej zaawansowanej logiki, można by sprawdzać, czy $path już zawiera slashe
+                    // i czy $currentUrlPathString nie jest już jego częścią.
+                    // Na razie: jeśli jesteśmy na "strona-a", a wzmianka to "strona-b", link to "/strona-a/strona-b"
+                    // Jeśli jesteśmy na "/", a wzmianka to "strona-a", link to "/strona-a"
+                    $fullPath = !empty($basePath) ? $basePath . '/' . $path : $path;
+                    $formattedText = '<a href="/' . htmlspecialchars(ltrim($fullPath, '/')) . '">' . htmlspecialchars($mentionedPageTitle) . '</a>';
                 } else {
                     // Jeśli ścieżka jest pusta, wyświetl sam tekst (tytuł lub ID)
                     $formattedText = htmlspecialchars($mentionedPageTitle);
@@ -246,31 +309,47 @@ function formatRichText($richTextArray, $apiKey, $cacheDir, $cacheExpiration) {
             }
 
         } else if ($type === 'text') {
-            // Obsługa zwykłego tekstu (bez zmian)
-            $formattedText = htmlspecialchars($richText['plain_text'] ?? ''); 
+            $currentText = htmlspecialchars($richText['plain_text'] ?? ''); 
             if (isset($richText['annotations'])) { 
-                if ($richText['annotations']['bold']) { $formattedText = "<strong>{$formattedText}</strong>"; }
-                if ($richText['annotations']['italic']) { $formattedText = "<em>{$formattedText}</em>"; }
-                if ($richText['annotations']['strikethrough']) { $formattedText = "<del>{$formattedText}</del>"; }
-                if ($richText['annotations']['underline']) { $formattedText = "<u>{$formattedText}</u>"; }
-                if ($richText['annotations']['code']) { $formattedText = "<code>{$formattedText}</code>"; }
+                $annotations = $richText['annotations'];
+                if ($annotations['bold']) { $currentText = "<strong>{$currentText}</strong>"; }
+                if ($annotations['italic']) { $currentText = "<em>{$currentText}</em>"; }
+                if ($annotations['strikethrough']) { $currentText = "<del>{$currentText}</del>"; }
+                if ($annotations['underline']) { $currentText = "<u>{$currentText}</u>"; }
+                if ($annotations['code']) { $currentText = "<code>{$currentText}</code>"; }
+                // Obsługa kolorów
+                if (isset($annotations['color']) && $annotations['color'] !== 'default') {
+                    // Użyj klas CSS dla kolorów dla lepszej stylizacji i możliwości dostosowania
+                    // np. notion-color-blue, notion-bg-yellow
+                    $colorClass = 'notion-' . str_replace('_background', '-bg', $annotations['color']);
+                    $currentText = "<span class=\"" . htmlspecialchars($colorClass) . "\">{$currentText}</span>";
+                }
              }
             if (isset($richText['href']) && $richText['href']) { 
-                $formattedText = "<a href=\"" . htmlspecialchars($richText['href']) . "\" target=\"_blank\">{$formattedText}</a>";
+                $currentText = "<a href=\"" . htmlspecialchars($richText['href']) . "\" target=\"_blank\">" . htmlspecialchars($currentText) . "</a>";
              }
-
-    } else {
+            $formattedText = $currentText;
+        // --- NOWA OBSŁUGA: Równanie w linii ---
+        } else if ($type === 'equation') {
+            $expression = htmlspecialchars($richText['equation']['expression'] ?? '');
+            // Dla KaTeX, użyj odpowiednich ograniczników lub klas.
+            // Standardowe auto-renderowanie KaTeX szuka \( ... \) dla równań w linii.
+            $formattedText = '\\(' . $expression . '\\)'; // Poprawione escapowanie dla KaTeX
+            // Alternatywnie, użyj klasy i pozwól skryptowi KaTeX znaleźć to:
+            // $formattedText = "<span class=\"math-inline\">{$expression}</span>";
+        // --- KONIEC NOWEJ OBSŁUGI ---
+        } else {
              $formattedText = htmlspecialchars($richText['plain_text'] ?? '');
-    }
+        }
         
         $text .= $formattedText;
-}
+    }
 
     return $text;
 }
 
 // Konwersja z formatu Notion na HTML (rozszerzona implementacja)
-function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
+function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString = '') {
     $html = '';
     $inList = false;
     $listType = ''; // 'ul' lub 'ol'
@@ -278,7 +357,6 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
     if (isset($content['error'])) {
         $httpCode = $content['response_code'] ?? null;
         if ($httpCode === 404) {
-             // Specjalna obsługa dla 404 od Notion API (np. zły ID strony)
              return "<div class=\"error-message\">Błąd: Nie znaleziono strony Notion (ID może być nieprawidłowy).</div>";
         }
         return "<div class=\"error-message\">Błąd pobierania danych z Notion: {$content['error']}</div>";
@@ -289,20 +367,8 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
             $currentBlockType = $block['type'];
             $isListItem = in_array($currentBlockType, ['bulleted_list_item', 'numbered_list_item']);
 
-            // Zarządzanie zamykaniem listy
-            if ($inList && !$isListItem && $currentBlockType !== 'child_page') { // Dodano warunek dla child_page
-                 $html .= "</{$listType}>\n";
-                 $inList = false;
-                 $listType = '';
-            } else if ($inList && $isListItem) {
-                // Sprawdź, czy typ listy się zmienił
-                $newListType = ($currentBlockType === 'bulleted_list_item') ? 'ul' : 'ol';
-                if ($newListType !== $listType) {
-                    $html .= "</{$listType}>\n"; // Zamknij starą listę
-                    $html .= "<{$newListType}>\n"; // Otwórz nową listę
-                    $listType = $newListType;
-                }
-            } else if ($inList && $currentBlockType === 'child_page') { // Zamknij listę przed linkiem do podstrony
+            // Zarządzanie zamykaniem listy, gdy przechodzimy do elementu niebędącego elementem listy
+            if ($inList && !$isListItem) {
                  $html .= "</{$listType}>\n";
                  $inList = false;
                  $listType = '';
@@ -310,178 +376,137 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
 
             switch ($currentBlockType) {
                 case 'paragraph':
-                    // Przekaż parametry do formatRichText
-                    $text = formatRichText($block['paragraph']['rich_text'], $apiKey, $cacheDir, $cacheExpiration); 
-                    if (!empty($text)) {
+                    $text = formatRichText($block['paragraph']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    if (!empty($text) || (isset($block['paragraph']['rich_text']) && empty($block['paragraph']['rich_text']))) { // Renderuj <p> nawet dla pustych tekstów, jeśli blok istnieje
                         $html .= "<p>{$text}</p>\n";
-                    } else {
-                        $html .= "<p>&nbsp;</p>\n"; // Pusty paragraf
+                    } else { // Kiedyś było &nbsp; ale Notion czasem zwraca puste paragrafy
+                        $html .= "<p></p>\n"; 
                     }
                     break;
                     
                 case 'heading_1':
                 case 'heading_2':
                 case 'heading_3':
-                    // --- POPRAWIONA LOGIKA GENEROWANIA TAGÓW H1/H2/H3 ---
-                    $key = $currentBlockType; // np. 'heading_1'
-                    $level = substr($key, -1); // Pobierz ostatni znak ('1', '2', lub '3')
+                    $key = $currentBlockType; 
+                    $level = substr($key, -1); 
                     
-                    // Sprawdź, czy poziom jest poprawną cyfrą
                     if (is_numeric($level) && $level >= 1 && $level <= 6) { 
-                        $tagName = 'h' . $level; // Utwórz poprawny tag np. 'h1'
-                        // Pobierz i sformatuj tekst nagłówka
-                        $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheExpiration);
-                        // Wygeneruj poprawny HTML
+                        $tagName = 'h' . $level; 
+                        $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
                         $html .= "<{$tagName}>{$text}</{$tagName}>\n";
                     } else {
-                        // Logowanie błędu, jeśli typ nagłówka jest nieoczekiwany
                         error_log("Nieoczekiwany lub niepoprawny typ nagłówka w notionToHtml: " . $key);
-                        // Można opcjonalnie wyświetlić tekst w paragrafie jako fallback
-                        $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheExpiration);
+                        $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
                         $html .= "<p><strong>(Błąd nagłówka: {$key})</strong> {$text}</p>\n";
                     }
-                    break; // Koniec przypadku dla nagłówków
+                    break; 
                     
                 case 'bulleted_list_item':
                 case 'numbered_list_item':
-                    // Przekaż parametry do formatRichText
-                    $key = $currentBlockType;
-                    $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheExpiration);
-                    if (!$inList || $listType !== 'ul') {
-                        if($inList) $html .= "</{$listType}>\n"; // Zamknij jeśli była inna lista
-                        $html .= "<ul>\n";
+                    $itemKey = $currentBlockType;
+                    $itemBlock = $block[$itemKey];
+                    $itemText = formatRichText($itemBlock['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $expectedListTag = ($currentBlockType === 'bulleted_list_item') ? 'ul' : 'ol';
+
+                    if (!$inList || $listType !== $expectedListTag) {
+                        if ($inList) { 
+                            $html .= "</{$listType}>\n"; 
+                        }
+                        $html .= "<{$expectedListTag}>\n"; 
                         $inList = true;
-                        $listType = 'ul';
+                        $listType = $expectedListTag;
                     }
-                    $html .= "<li>{$text}</li>\n";
+
+                    $html .= "<li>{$itemText}"; 
+
+                    if (isset($block['has_children']) && $block['has_children']) {
+                        $childrenHtml = fetchAndRenderChildren($block['id'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                        $html .= $childrenHtml; // Dzieci są renderowane wewnątrz <li>
+                    }
+                    $html .= "</li>\n"; 
                     break;
                     
                 case 'to_do':
-                    // Przekaż parametry do formatRichText
-                    $text = formatRichText($block['to_do']['rich_text'], $apiKey, $cacheDir, $cacheExpiration);
+                    $text = formatRichText($block['to_do']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
                     $checked = $block['to_do']['checked'] ? ' checked' : '';
-                    
-                    if ($inList) {
-                        $html .= "</ul>\n";
-                        $inList = false;
-                    }
-                    
-                    $html .= "<div class=\"todo-item\"><input type=\"checkbox\"{$checked} disabled> {$text}</div>\n";
+                    $html .= "<div class=\"todo-item\"><label><input type=\"checkbox\"{$checked} disabled> {$text}</label></div>\n";
                     break;
                     
                 case 'image':
-                    if ($inList) {
-                        $html .= "</ul>\n";
-                        $inList = false;
-                    }
-                    
-                    $caption = '';
+                    $captionText = '';
                     if (isset($block['image']['caption']) && !empty($block['image']['caption'])) {
-                        // Przekaż parametry do formatRichText
-                        $caption = formatRichText($block['image']['caption'], $apiKey, $cacheDir, $cacheExpiration);
+                        $captionText = formatRichText($block['image']['caption'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
                     }
                     
                     $imageUrl = '';
-                    if (isset($block['image']['file']) && isset($block['image']['file']['url'])) {
+                    if (isset($block['image']['file']['url'])) {
                         $imageUrl = $block['image']['file']['url'];
-                    } elseif (isset($block['image']['external']) && isset($block['image']['external']['url'])) {
+                    } elseif (isset($block['image']['external']['url'])) {
                         $imageUrl = $block['image']['external']['url'];
                     }
                     
                     if ($imageUrl) {
                         $html .= "<figure>";
-                        $html .= "<img src=\"" . htmlspecialchars($imageUrl) . "\" alt=\"" . ($caption ?: 'Obrazek') . "\">";
-                        if ($caption) {
-                            $html .= "<figcaption>{$caption}</figcaption>";
+                        $html .= "<img src=\"{$imageUrl}\" alt=\"" . htmlspecialchars(strip_tags($captionText) ?: 'Obrazek') . "\">"; // strip_tags dla alt
+                        if ($captionText) {
+                            $html .= "<figcaption>{$captionText}</figcaption>";
                         }
                         $html .= "</figure>\n";
                     }
                     break;
                     
                 case 'divider':
-                    if ($inList) {
-                        $html .= "</ul>\n";
-                        $inList = false;
-                    }
-                    
                     $html .= "<hr>\n";
                     break;
                     
                 case 'code':
-                    if ($inList) {
-                        $html .= "</ul>\n";
-                        $inList = false;
-                    }
-                    
-                    $language = isset($block['code']['language']) ? htmlspecialchars($block['code']['language']) : ''; // Zabezpiecz język
-                    // formatRichText zwraca już HTML (np. z <strong>), nie należy go dodatkowo escapować htmlspecialchars
-                    $codeContent = formatRichText($block['code']['rich_text'], $apiKey, $cacheDir, $cacheExpiration); 
-                    // Dodaj klasę dla PrismJS (jeśli język jest znany)
-                    $langClass = !empty($language) ? " class=\"language-{$language}\"" : '';
+                    $language = isset($block['code']['language']) ? htmlspecialchars($block['code']['language']) : 'plaintext'; 
+                    $codeContent = formatRichText($block['code']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $langClass = !empty($language) ? " class=\"language-{$language}\"" : ' class=\"language-plaintext\"'; // Zawsze dodaj klasę
                     $html .= "<pre><code{$langClass}>{$codeContent}</code></pre>\n"; 
                     break;
                     
                 case 'quote':
-                    if ($inList) {
-                        $html .= "</ul>\n";
-                        $inList = false;
-                    }
-                    
-                    $text = formatRichText($block['quote']['rich_text'], $apiKey, $cacheDir, $cacheExpiration);
+                    $text = formatRichText($block['quote']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
                     $html .= "<blockquote>{$text}</blockquote>\n";
                     break;
                     
                 case 'callout':
-                    if ($inList) {
-                        $html .= "</ul>\n";
-                        $inList = false;
-                    }
-                    
-                    $text = formatRichText($block['callout']['rich_text'], $apiKey, $cacheDir, $cacheExpiration);
-                    $icon = '';
-                    
+                    $text = formatRichText($block['callout']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $iconHtml = '';
                     if (isset($block['callout']['icon'])) {
                         if (isset($block['callout']['icon']['emoji'])) {
-                            $icon = $block['callout']['icon']['emoji'];
-                        } elseif (isset($block['callout']['icon']['external']) && isset($block['callout']['icon']['external']['url'])) {
+                            $iconHtml = "<span class=\"callout-emoji\">" . htmlspecialchars($block['callout']['icon']['emoji']) . "</span> ";
+                        } elseif (isset($block['callout']['icon']['external']['url'])) {
                             $iconUrl = $block['callout']['icon']['external']['url'];
-                            $icon = "<img src=\"" . htmlspecialchars($iconUrl) . "\" alt=\"ikona\" class=\"callout-icon\">";
+                            $iconHtml = "<img src=\"{$iconUrl}\" alt=\"ikona\" class=\"callout-icon-external\"> ";
                         }
                     }
-                    
-                    $html .= "<div class=\"callout\">{$icon} {$text}</div>\n";
+                    $html .= "<div class=\"callout\">{$iconHtml}{$text}</div>\n";
                     break;
                     
                 case 'table':
-                    if ($inList) {
-                        $html .= "</{$listType}>\n";
-                        $inList = false;
-                        $listType = '';
-                    }
-
+                    // ... (istniejąca logika tabeli pozostaje bez zmian, zakładając, że działa poprawnie)
+                    // Należy upewnić się, że formatRichText jest wywoływany dla komórek
                     $tableBlockId = $block['id'];
                     $hasColumnHeader = $block['table']['has_column_header'] ?? false;
-                    $hasRowHeader = $block['table']['has_row_header'] ?? false; // Rzadziej używane, ale można uwzględnić
+                    $hasRowHeader = $block['table']['has_row_header'] ?? false;
 
-                    // Pobierz wiersze tabeli (jako bloki potomne bloku tabeli)
                     $tableRowsData = getNotionContent($tableBlockId, $apiKey, $cacheDir, $cacheExpiration);
                     $tableRowsContent = json_decode($tableRowsData, true);
 
                     if (isset($tableRowsContent['results']) && is_array($tableRowsContent['results'])) {
                         $html .= "<div class=\"table-wrapper\"><table class=\"notion-table\">\n";
-                        
                         $rows = $tableRowsContent['results'];
                         
-                        // Obsługa nagłówka kolumn
                         if ($hasColumnHeader && !empty($rows)) {
-                            $headerRow = array_shift($rows); // Pierwszy wiersz to nagłówek
-                            if (isset($headerRow['table_row']['cells'])) {
+                            $headerRowBlock = array_shift($rows); 
+                            if (isset($headerRowBlock['table_row']['cells'])) {
                                 $html .= "<thead><tr>\n";
                                 $cellIndex = 0;
-                                foreach ($headerRow['table_row']['cells'] as $cell) {
-                                    $tag = ($hasRowHeader && $cellIndex === 0) ? 'th' : 'th'; // Pierwsza komórka nagłówka może być pusta lub specjalna
-                                    // Przekaż parametry do formatRichText dla komórki nagłówka
-                                    $cellContent = formatRichText($cell, $apiKey, $cacheDir, $cacheExpiration);
+                                foreach ($headerRowBlock['table_row']['cells'] as $cellRichTextArray) {
+                                    $tag = ($hasRowHeader && $cellIndex === 0 && !$hasColumnHeader) ? 'td' : 'th'; // Specjalny przypadek dla pierwszej komórki bez nagłówka kolumn, ale z nagłówkiem wiersza
+                                    $cellContent = formatRichText($cellRichTextArray, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
                                     $html .= "<{$tag}>{$cellContent}</{$tag}>\n";
                                     $cellIndex++;
                                 }
@@ -489,17 +514,14 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
                             }
                         }
 
-                        // Obsługa ciała tabeli
                         $html .= "<tbody>\n";
-                        foreach ($rows as $row) {
-                           if (isset($row['table_row']['cells'])) {
+                        foreach ($rows as $rowBlock) {
+                           if (isset($rowBlock['table_row']['cells'])) {
                                 $html .= "<tr>\n";
                                 $cellIndex = 0;
-                                foreach ($row['table_row']['cells'] as $cell) {
-                                    // Użyj <th> dla pierwszej komórki, jeśli wiersz ma nagłówek
+                                foreach ($rowBlock['table_row']['cells'] as $cellRichTextArray) {
                                     $tag = ($hasRowHeader && $cellIndex === 0) ? 'th' : 'td'; 
-                                    // Przekaż parametry do formatRichText dla komórki danych
-                                    $cellContent = formatRichText($cell, $apiKey, $cacheDir, $cacheExpiration);
+                                    $cellContent = formatRichText($cellRichTextArray, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
                                     $html .= "<{$tag}>{$cellContent}</{$tag}>\n";
                                     $cellIndex++;
                                 }
@@ -508,36 +530,153 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration) {
                         }
                         $html .= "</tbody>\n";
                         $html .= "</table></div>\n";
-
                     } else {
-                         // Błąd podczas pobierania wierszy lub brak wierszy
                          $html .= "<div class=\"table-placeholder\">Nie można załadować zawartości tabeli.</div>\n";
                          if(isset($tableRowsContent['error'])) {
                               error_log("Błąd pobierania wierszy tabeli ({$tableBlockId}): " . $tableRowsContent['error']);
                          }
                     }
                     break;
-                    
-                // --- NOWY PRZYPADEK: Obsługa bloku child_page ---
+                
                 case 'child_page':
                     if (isset($block['child_page']['title'])) {
                         $title = $block['child_page']['title'];
-                        // Użyj funkcji pomocniczej do stworzenia ścieżki
-                        $path = normalizeTitleForPath($title); 
-                        if (!empty($path)) {
-                           // Wyświetl tytuł jako link do podstrony
-                           $html .= "<p class=\"child-page-link\"><a href=\"/" . htmlspecialchars($path) . "\">📄 " . htmlspecialchars($title) . "</a></p>\n"; 
+                        $pathSegment = normalizeTitleForPath($title); 
+                        if (!empty($pathSegment)) {
+                           // Poprawione tworzenie pełnej ścieżki dla child_page
+                           $basePath = !empty($currentUrlPathString) ? rtrim($currentUrlPathString, '/') : '';
+                           $fullPath = !empty($basePath) ? $basePath . '/' . $pathSegment : $pathSegment;
+                           $html .= "<p class=\"child-page-link\"><a href=\"/" . htmlspecialchars(ltrim($fullPath, '/')) . "\">📄 " . htmlspecialchars($title) . "</a></p>\n"; 
                         } else {
-                           // Jeśli tytuł jest pusty lub składa się tylko ze znaków specjalnych
                            $html .= "<p class=\"child-page-link\"><em>(Podstrona bez popranego tytułu)</em></p>\n";
                         }
                     }
                     break;
-                    
+
+                // --- NOWE TYPY BLOKÓW ---
+                case 'toggle':
+                    $summaryText = formatRichText($block['toggle']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $html .= "<details class=\"notion-toggle\"><summary>{$summaryText}</summary>";
+                    if (isset($block['has_children']) && $block['has_children']) {
+                        $html .= "<div class=\"notion-toggle-content\">";
+                        $html .= fetchAndRenderChildren($block['id'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                        $html .= "</div>";
+                    }
+                    $html .= "</details>\n";
+                    break;
+
+                case 'bookmark':
+                    $url = $block['bookmark']['url'] ?? '#';
+                    $captionArray = $block['bookmark']['caption'] ?? [];
+                    $captionText = formatRichText($captionArray, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    // Notion API nie dostarcza metadanych (tytuł, opis, ikona) dla zakładek.
+                    // Można by je pobrać serwerowo (wolne) lub zaimplementować po stronie klienta.
+                    // Na razie prosty link.
+                    $html .= "<div class=\"notion-bookmark\">";
+                    $html .= "<a href=\"{$url}\" target=\"_blank\" rel=\"noopener noreferrer\">" . htmlspecialchars($url) . "</a>";
+                    if (!empty($captionText)) {
+                        $html .= "<div class=\"caption\">{$captionText}</div>";
+                    }
+                    $html .= "</div>\n";
+                    break;
+
+                case 'embed':
+                    $url = $block['embed']['url'] ?? '';
+                    $captionArray = $block['embed']['caption'] ?? [];
+                    $captionText = formatRichText($captionArray, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $html .= "<div class=\"notion-embed\">";
+                    if (filter_var($url, FILTER_VALIDATE_URL)) {
+                        // Prosta logika dla YouTube i Vimeo, można rozbudować
+                        if (preg_match('%(?:youtube(?:-nocookie)?\.com/(?:[^/]+/.+/|(?:v|e(?:mbed)?)/|.*[?&]v=)|youtu\.be/)([^"&?/ ]{11})%i', $url, $match)) {
+                            $embedUrl = "https://www.youtube.com/embed/" . htmlspecialchars($match[1]);
+                            $html .= "<iframe src=\"{$embedUrl}\" frameborder=\"0\" allow=\"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture\" allowfullscreen></iframe>";
+                        } elseif (preg_match('/vimeo\.com\/(?:video\/)?(\d+)/i', $url, $match)) {
+                            $embedUrl = "https://player.vimeo.com/video/" . htmlspecialchars($match[1]);
+                            $html .= "<iframe src=\"{$embedUrl}\" frameborder=\"0\" allow=\"autoplay; fullscreen; picture-in-picture\" allowfullscreen></iframe>";
+                        } else {
+                            // Ogólny iframe dla innych źródeł (może nie działać przez X-Frame-Options)
+                            $html .= "<iframe src=\"" . htmlspecialchars($url) . "\" frameborder=\"0\" allowfullscreen></iframe>";
+                        }
+                    } else {
+                        $html .= "<p>Nieprawidłowy URL dla osadzenia: " . htmlspecialchars($url) . "</p>";
+                    }
+                    if (!empty($captionText)) {
+                        $html .= "<div class=\"caption\">{$captionText}</div>";
+                    }
+                    $html .= "</div>\n";
+                    break;
+                
+                case 'video':
+                    $videoUrl = '';
+                    $captionArray = $block['video']['caption'] ?? [];
+                    $captionText = formatRichText($captionArray, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $videoType = $block['video']['type'] ?? null;
+
+                    if ($videoType === 'external' && isset($block['video']['external']['url'])) {
+                        $videoUrl = $block['video']['external']['url'];
+                    } elseif ($videoType === 'file' && isset($block['video']['file']['url'])) {
+                        $videoUrl = $block['video']['file']['url']; // Pamiętaj, że te URL są tymczasowe
+                    }
+
+                    $html .= "<div class=\"notion-video\">";
+                    if (filter_var($videoUrl, FILTER_VALIDATE_URL)) {
+                         // Podobnie jak embed, można tu dodać logikę dla YouTube/Vimeo, jeśli nie użyto bloku embed
+                        $html .= "<video controls src=\"{$videoUrl}\" style=\"width:100%; max-width: 600px;\">Twoja przeglądarka nie obsługuje tagu video.</video>";
+                    } else {
+                        $html .= "<p>Nieprawidłowy URL wideo.</p>";
+                    }
+                     if (!empty($captionText)) {
+                        $html .= "<div class=\"caption\">{$captionText}</div>";
+                    }
+                    $html .= "</div>\n";
+                    break;
+
+                case 'file':
+                    $fileUrl = '';
+                    $fileName = 'Plik'; 
+                    $captionArray = $block['file']['caption'] ?? [];
+                    $captionText = formatRichText($captionArray, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $fileType = $block['file']['type'] ?? null;
+
+                    if ($fileType === 'external' && isset($block['file']['external']['url'])) {
+                        $fileUrl = $block['file']['external']['url'];
+                        $fileName = htmlspecialchars($block['file']['name'] ?? $fileName);
+                    } elseif ($fileType === 'file' && isset($block['file']['url'])) {
+                        $fileUrl = $block['file']['file']['url']; // URL tymczasowy
+                        $fileName = htmlspecialchars($block['file']['name'] ?? $fileName);
+                    }
+
+                    if ($fileUrl) {
+                        $html .= "<div class=\"notion-file\"><p><a href=\"{$fileUrl}\" target=\"_blank\" download=\"{$fileName}\">📎 {$fileName}</a></p>";
+                        if (!empty($captionText)) {
+                            $html .= "<div class=\"caption\">{$captionText}</div>";
+                        }
+                        $html .= "</div>\n";
+                    }
+                    break;
+
+                case 'equation': // Blok równania
+                    $expression = htmlspecialchars($block['equation']['expression'] ?? '');
+                    // Dla KaTeX, użyj odpowiednich ograniczników lub klas dla bloków.
+                    // Standardowe auto-renderowanie KaTeX szuka \[ ... \] dla bloków.
+                    $html .= "<div class=\"notion-equation\">\\[" . $expression . "\\]</div>\n"; // Poprawione dla KaTeX blokowego
+                    // Alternatywnie: $html .= "<div class=\"math-display\">{$expression}</div>\n";
+                    break;
+                
+                case 'table_of_contents':
+                    // Notion API nie zwraca elementów ToC, tylko informację, że ma być.
+                    // Generowanie ToC odbywa się po stronie klienta (przez Twój main.js).
+                    // Można dodać placeholder lub klasę, aby JS wiedział, gdzie umieścić ToC, jeśli ten blok jest obecny.
+                    $color = $block['table_of_contents']['color'] ?? 'default';
+                    $html .= "<div class=\"notion-table-of-contents-placeholder\" data-color=\"" . htmlspecialchars($color) . "\">";
+                    // $html .= "<!-- Spis treści zostanie wygenerowany tutaj przez JavaScript -->";
+                    $html .= "</div>\n";
+                    break;
+
                 default:
-                    // Domyślna obsługa nieznanych bloków (można ją usunąć, jeśli nie chcemy ich widzieć)
-                    // $html .= "<div class=\"unsupported-block\">Nieobsługiwany typ bloku: {$block['type']}</div>\n"; 
-                    // Zdecydowałem się zakomentować, aby nie wyświetlać nic dla innych nieobsługiwanych typów
+                    // Można zostawić puste, aby ignorować nieobsługiwane bloki,
+                    // lub dodać komunikat diagnostyczny:
+                    // $html .= "<div class=\"unsupported-block\"><p>Nieobsługiwany typ bloku: " . htmlspecialchars($block['type']) . "</p></div>\n";
                     break; 
             }
          }
@@ -601,10 +740,34 @@ $htmlContent = ''; // Zainicjuj $htmlContent
 if (empty($requestPath)) {
     $currentPageId = $notionPageId; 
 } else {
-    $currentPageId = findNotionSubpageId($notionPageId, $requestPath, $notionApiKey, $cacheDir, $cacheExpiration);
-    if ($currentPageId === null) {
+    // --- NOWA LOGIKA DLA ZAGNIEŻDŻONYCH ŚCIEŻEK ---
+    $pathSegments = explode('/', $requestPath);
+    $currentParentIdToSearch = $notionPageId; // Zacznij od strony głównej
+    $resolvedPageId = null;
+
+    foreach ($pathSegments as $segment) {
+        if (empty($segment)) { // Pomiń puste segmenty (np. przy podwójnym slashu //)
+            continue;
+        }
+        // Usuń potencjalne query stringi z segmentu, np. title?param=val -> title
+        $segmentName = strtok($segment, '?');
+
+        $foundSubpageId = findNotionSubpageId($currentParentIdToSearch, $segmentName, $notionApiKey, $cacheDir, $cacheExpiration);
+        
+        if ($foundSubpageId === null) {
+            $resolvedPageId = null; // Segment nie został znaleziony, przerwij
+            break;
+        }
+        $resolvedPageId = $foundSubpageId;
+        $currentParentIdToSearch = $foundSubpageId; // Następne wyszukiwanie będzie w tej znalezionej podstronie
+    }
+
+    if ($resolvedPageId !== null) {
+        $currentPageId = $resolvedPageId;
+    } else {
         $pageNotFound = true; 
     }
+    // --- KONIEC NOWEJ LOGIKI ---
 }
 
 // Ustal pełny URL (podstawowa wersja - może wymagać dostosowania do serwera)
@@ -663,7 +826,7 @@ if ($pageNotFound) {
         }
     } else {
         // Renderuj zawartość do HTML
-        $htmlContent = notionToHtml($notionContent, $notionApiKey, $cacheDir, $cacheExpiration);
+        $htmlContent = notionToHtml($notionContent, $notionApiKey, $cacheDir, $cacheExpiration, $requestPath);
 
         // --- POPRAWIONA LINIA: Usuwanie bloków z encjami HTML ---
         $htmlContent = preg_replace('/&lt;hide&gt;.*?&lt;\/hide&gt;/si', '', $htmlContent);
@@ -711,8 +874,10 @@ if ($pageNotFound) {
 
     <link rel="stylesheet" href="/css/style.css"> 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.24.1/themes/prism.css">
+    <!-- Dodaj link do KaTeX CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.css" integrity="sha384-Xi8rHCmBmhbuyyhbI88391ZKP2dmfnOl4rT9ZfRI7mLTdk1wblIUnrIq35nqwEvC" crossorigin="anonymous">
 
-    <!-- Dodatkowe style dla formularza hasła (opcjonalnie) -->
+    <!-- Dodatkowe styles dla formularza hasła (opcjonalnie) -->
     <style>
         .password-protected-content {
             border: 1px solid #ccc;
@@ -733,6 +898,26 @@ if ($pageNotFound) {
             padding: 5px 10px;
             cursor: pointer;
         }
+        .notion-toggle summary { cursor: pointer; font-weight: bold; margin-bottom: 5px;}
+        .notion-toggle-content { margin-left: 20px; border-left: 2px solid #eee; padding-left: 10px; }
+        .notion-bookmark, .notion-embed, .notion-video, .notion-file, .notion-equation, .callout, .notion-table-of-contents-placeholder { margin: 1em 0; padding: 1em; border: 1px solid #eee; border-radius: 4px; background-color: #f9f9f9; }
+        .notion-embed iframe, .notion-video video { max-width: 100%; display: block; margin: 0 auto; }
+        .caption { font-size: 0.9em; color: #555; text-align: center; margin-top: 0.5em; }
+        .callout-emoji { font-size: 1.2em; margin-right: 0.5em; }
+        .callout-icon-external { width: 1.5em; height: 1.5em; vertical-align: middle; margin-right: 0.5em; }
+        .todo-item label { display: flex; align-items: center; }
+        .todo-item input[type="checkbox"] { margin-right: 8px; }
+        /* Przykładowe styles dla kolorów tekstu/tła Notion (dodaj więcej wg potrzeb) */
+        .notion-gray { color: gray; } .notion-gray-bg { background-color: #f1f1f1; padding: 0.1em 0.3em; border-radius: 3px;}
+        .notion-brown { color: brown; } .notion-brown-bg { background-color: #f3e9e2; padding: 0.1em 0.3em; border-radius: 3px;}
+        .notion-orange { color: orange; } .notion-orange-bg { background-color: #fce9d7; padding: 0.1em 0.3em; border-radius: 3px;}
+        .notion-yellow { color: #c38f00; } .notion-yellow-bg { background-color: #fdf4bf; padding: 0.1em 0.3em; border-radius: 3px;} /* Ciemniejszy żółty dla tekstu */
+        .notion-green { color: green; } .notion-green-bg { background-color: #e2f2e4; padding: 0.1em 0.3em; border-radius: 3px;}
+        .notion-blue { color: blue; } .notion-blue-bg { background-color: #ddebf1; padding: 0.1em 0.3em; border-radius: 3px;}
+        .notion-purple { color: purple; } .notion-purple-bg { background-color: #ebe4f2; padding: 0.1em 0.3em; border-radius: 3px;}
+        .notion-pink { color: pink; } .notion-pink-bg { background-color: #f8e4ec; padding: 0.1em 0.3em; border-radius: 3px;}
+        .notion-red { color: red; } .notion-red-bg { background-color: #f8e4e4; padding: 0.1em 0.3em; border-radius: 3px;}
+        .notion-equation { text-align: center; } /* Aby wyśrodkować blokowe równania KaTeX */
     </style>
 
 </head>
@@ -779,5 +964,15 @@ if ($pageNotFound) {
     
     <script src="/js/main.js"></script> 
     <script src="https://cdn.jsdelivr.net/npm/prismjs@1.24.1/prism.min.js"></script>
+    <!-- Dodaj skrypty KaTeX -->
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/katex.min.js" integrity="sha384-X/XCfMm41VSsqRNwNEypKSlVKGgBzu/+1G9lM2YtKkQ2A/v81rMvG0jM2o_n_D3p" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.0/dist/contrib/auto-render.min.js" integrity="sha384-+XBljXPPpF+B/2ucxMgMKLRePsE_rP9wF_T_LW3H3_lRjM1jYkK+F1VqB_Y6V3M4" crossorigin="anonymous"
+        onload="renderMathInElement(document.body, {
+            delimiters: [
+                {left: '\\[', right: '\\]', display: true}, // dla bloków równań
+                {left: '\\(', right: '\\)', display: false} // dla równań w linii (poprawione dla JS stringa w PHP)
+            ],
+            throwOnError : false
+        });"></script>
 </body>
 </html>
