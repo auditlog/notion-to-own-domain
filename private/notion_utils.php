@@ -547,16 +547,32 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
 function processPasswordTags($html, $isVerified, $error) {
     return preg_replace_callback('/&lt;pass&gt;(.*?)&lt;\/pass&gt;/si', function($matches) use ($isVerified, $error) {
         if ($isVerified) {
-            return $matches[1]; 
+            // Even for verified users, additional content cleaning
+            // Remove potentially dangerous tags before returning content
+            $content = $matches[1];
+
+            // Remove script tags
+            $content = preg_replace('/<script\b[^>]*>(.*?)<\/script>/is', '', $content);
+            // Remove potentially dangerous attributes
+            $content = preg_replace('/\s+on\w+\s*=\s*(["\']).*?\1/i', '', $content);
+            // Remove dangerous javascript: links
+            $content = preg_replace('/href\s*=\s*(["\'])javascript:.*?\1/i', 'href="#"', $content);
+
+            return $content;
         } else {
+            // Generate secure form with proper escaping
             $form = '<div class="password-protected-content">';
             $form .= '<h4>Ta treść jest chroniona hasłem</h4>';
             if ($error) {
                 $form .= '<p style="color: red;">Nieprawidłowe hasło.</p>';
             }
-            $form .= '<form method="post" action="' . htmlspecialchars($_SERVER['REQUEST_URI']) . '">';
+
+            // Additional protection against XSS in URL
+            $cleanRequestURI = filter_var($_SERVER['REQUEST_URI'] ?? '', FILTER_SANITIZE_URL);
+
+            $form .= '<form method="post" action="' . htmlspecialchars($cleanRequestURI) . '">';
             $form .= '<label for="content_password">Wprowadź hasło:</label> ';
-            $form .= '<input type="password" name="content_password" id="content_password" required> ';
+            $form .= '<input type="password" name="content_password" id="content_password" maxlength="100" required> ';
             $form .= '<button type="submit">Odblokuj</button>';
             $form .= '</form>';
             $form .= '</div>';

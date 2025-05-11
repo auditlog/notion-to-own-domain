@@ -1,8 +1,22 @@
 <?php
+// Error code validation - only numbers and limited values allowed
 $errorCode = isset($_GET['code']) ? intval($_GET['code']) : 404;
+
+// Make sure error code is one of the supported values
+$allowedErrorCodes = [400, 401, 403, 404, 500, 502, 503, 504];
+if (!in_array($errorCode, $allowedErrorCodes)) {
+    $errorCode = 404; // Default error code
+}
+
 $errorMessages = [
+    400 => 'Nieprawidłowe żądanie',
+    401 => 'Wymagana autoryzacja',
+    403 => 'Brak dostępu',
     404 => 'Nie znaleziono strony',
-    500 => 'Błąd serwera'
+    500 => 'Błąd serwera',
+    502 => 'Nieprawidłowa odpowiedź serwera',
+    503 => 'Usługa niedostępna',
+    504 => 'Przekroczono czas oczekiwania'
 ];
 $errorMessage = isset($errorMessages[$errorCode]) ? $errorMessages[$errorCode] : 'Wystąpił nieznany błąd';
 ?>

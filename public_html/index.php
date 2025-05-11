@@ -12,28 +12,45 @@ require_once '../private/config.php';
 // Dołączenie funkcji pomocniczych Notion
 require_once '../private/notion_utils.php';
 
-// --- OBSŁUGA WERYFIKACJI HASŁA ---
+// --- PASSWORD VERIFICATION HANDLING ---
 $passwordVerified = $_SESSION['password_verified'] ?? false;
 $passwordError = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content_password'])) {
-    if ($_POST['content_password'] === $contentPassword) {
-        $_SESSION['password_verified'] = true;
-        $passwordVerified = true;
-        // Przekieruj, aby uniknąć ponownego wysłania formularza przy odświeżeniu
-        header('Location: ' . $_SERVER['REQUEST_URI']);
-        exit;
-    } else {
+    // Password validation - limit length and special characters
+    $submittedPassword = $_POST['content_password'];
+
+    // Check password length (max 100 characters to prevent DoS attacks)
+    if (strlen($submittedPassword) > 100) {
         $passwordError = true;
+    } else {
+        // Constant-time comparison (protection against timing attacks)
+        if (hash_equals($contentPassword, $submittedPassword)) {
+            $_SESSION['password_verified'] = true;
+            $passwordVerified = true;
+
+            // Redirect to avoid form resubmission on refresh
+            // Sanitize URI before redirecting
+            $redirectURI = filter_var($_SERVER['REQUEST_URI'], FILTER_SANITIZE_URL);
+            header('Location: ' . $redirectURI);
+            exit;
+        } else {
+            $passwordError = true;
+        }
     }
 }
-// --- KONIEC OBSŁUGI WERYFIKACJI HASŁA ---
+// --- END OF PASSWORD VERIFICATION HANDLING ---
 
-// Główna logika aplikacji
+// Main application logic
 
-// Odczytaj ścieżkę z parametru GET dodanego przez .htaccess
+// Read path from GET parameter added by .htaccess
 $requestPath = $_GET['path'] ?? '';
-$requestPath = trim($requestPath, '/'); // Usuń skrajne slashe
+
+// Path validation - remove potentially dangerous characters
+$requestPath = filter_var($requestPath, FILTER_SANITIZE_URL);
+// Additional protection against path traversal
+$requestPath = str_replace(['../', './'], '', $requestPath);
+$requestPath = trim($requestPath, '/'); // Remove trailing slashes
 
 $currentPageId = null;
 $pageNotFound = false;
@@ -81,14 +98,24 @@ if (empty($requestPath)) {
     // --- KONIEC NOWEJ LOGIKI ---
 }
 
-// Ustal pełny URL (podstawowa wersja - może wymagać dostosowania do serwera)
+// Determine full URL (basic version - may need server-specific adjustments)
 if (isset($_SERVER['HTTP_HOST'])) {
-    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
+    // Sanitize host before using
+    $httpHost = filter_var($_SERVER['HTTP_HOST'], FILTER_SANITIZE_URL);
+
+    // Validate host format (only allowed characters)
+    if (!preg_match('/^[a-zA-Z0-9\-\.]+(\:[0-9]+)?$/', $httpHost)) {
+        $httpHost = 'localhost'; // Default value for invalid host
+    }
+
+    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ||
+                ($_SERVER['SERVER_PORT'] ?? null) == 443) ? "https://" : "http://";
+
     $currentUrlPath = empty($requestPath) ? '/' : '/' . $requestPath;
-    $currentUrl = $protocol . $_SERVER['HTTP_HOST'] . $currentUrlPath;
+    $currentUrl = $protocol . $httpHost . $currentUrlPath;
 }
 
-// Procesowanie w zależności od znalezionego ID
+// Processing based on the found ID
 if ($pageNotFound) {
     http_response_code(404);
     $errorMessage = "Nie znaleziono strony dla ścieżki: /" . htmlspecialchars($requestPath);
@@ -123,15 +150,18 @@ if ($pageNotFound) {
     $notionContent = json_decode($notionData, true);
 
     if (isset($notionContent['error'])) {
-        $errorMessage = $notionContent['error'];
+        // Sanityzacja komunikatów błędów
+        $errorMessage = htmlspecialchars($notionContent['error']);
         if (isset($notionContent['message'])) {
-            $errorMessage .= ': ' . $notionContent['message'];
+            $errorMessage .= ': ' . htmlspecialchars($notionContent['message']);
         }
         // Jeśli Notion zwróciło 404 dla podanego ID, traktuj to jako błąd serwera lub konfiguracji
         if (($notionContent['response_code'] ?? null) === 404) {
-             http_response_code(500); 
-             $errorMessage = "Błąd konfiguracji: Nie można znaleźć strony Notion o podanym ID ({$currentPageId}). Sprawdź ID w konfiguracji lub czy strona nie została usunięta.";
-             $pageTitle = 'Błąd konfiguracji'; 
+             http_response_code(500);
+             // Bezpieczne pokazywanie ID
+             $safeCurrentPageId = htmlspecialchars($currentPageId);
+             $errorMessage = "Błąd konfiguracji: Nie można znaleźć strony Notion o podanym ID ({$safeCurrentPageId}). Sprawdź ID w konfiguracji lub czy strona nie została usunięta.";
+             $pageTitle = 'Błąd konfiguracji';
              $ogTitle = $pageTitle;
              $metaDescription = 'Wystąpił błąd podczas próby załadowania strony z Notion.';
         }
@@ -139,16 +169,24 @@ if ($pageNotFound) {
         // Renderuj zawartość do HTML
         $htmlContent = notionToHtml($notionContent, $notionApiKey, $cacheDir, $cacheDurations, $requestPath);
 
-        // --- POPRAWIONA LINIA: Usuwanie bloków z encjami HTML ---
+        // --- IMPROVED LINE: Removing blocks with HTML entities ---
         $htmlContent = preg_replace('/&lt;hide&gt;.*?&lt;\/hide&gt;/si', '', $htmlContent);
-        
-        // --- NOWA LINIA: Przetwarzanie znaczników <pass> ---
-        // Przekazujemy wynik weryfikacji hasła ($passwordVerified) i ewentualny błąd ($passwordError)
+
+        // --- NEW LINE: Processing <pass> tags ---
+        // Pass the password verification result ($passwordVerified) and any error ($passwordError)
         $htmlContent = processPasswordTags($htmlContent, $passwordVerified, $passwordError);
-        // --- KONIEC NOWEJ LINII ---
+
+        // Additional protection against XSS from untrusted sources
+        // Remove potentially dangerous JavaScript scripts
+        $htmlContent = preg_replace('/<script\b[^>]*>(.*?)<\/script>/is', '', $htmlContent);
+        // Remove potentially dangerous attributes like onclick, onerror, etc.
+        $htmlContent = preg_replace('/\s+on\w+\s*=\s*(["\']).*?\1/i', '', $htmlContent);
+        // Remove dangerous javascript: links
+        $htmlContent = preg_replace('/href\s*=\s*(["\'])javascript:.*?\1/i', 'href="#"', $htmlContent);
+        // --- END OF NEW LINE ---
     }
 } else {
-    // Sytuacja awaryjna - nie powinno się zdarzyć przy poprawnej logice
+    // Emergency situation - should not happen with correct logic
     http_response_code(500);
     $errorMessage = "Wystąpił nieoczekiwany błąd przy określaniu strony do wyświetlenia.";
     $pageTitle = 'Błąd serwera'; 
