@@ -7,10 +7,14 @@ ini_set('display_errors', 1);
 session_start(); 
 // --- KONIEC START SESJI ---
 
-// Dołączenie konfiguracji (poza katalogiem publicznym)
+// Include configuration (outside public directory)
 require_once '../private/config.php';
-// Dołączenie funkcji pomocniczych Notion
+// Include Notion helper functions
 require_once '../private/notion_utils.php';
+// Include security headers
+require_once '../private/security_headers.php';
+// Set security headers
+setSecurityHeaders();
 
 // --- PASSWORD VERIFICATION HANDLING ---
 $passwordVerified = $_SESSION['password_verified'] ?? false;

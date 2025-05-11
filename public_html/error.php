@@ -1,4 +1,9 @@
 <?php
+// Include security headers
+require_once '../private/security_headers.php';
+// Set security headers
+setSecurityHeaders();
+
 // Error code validation - only numbers and limited values allowed
 $errorCode = isset($_GET['code']) ? intval($_GET['code']) : 404;
 
