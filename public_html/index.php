@@ -25,10 +25,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content_password'])) 
 // --- KONIEC OBSŁUGI WERYFIKACJI HASŁA ---
 
 // Funkcja pobierająca zawartość z Notion
-function getNotionContent($pageId, $apiKey, $cacheDir, $cacheExpiration) {
+function getNotionContent($pageId, $apiKey, $cacheDir, $specificCacheExpiration) {
     $cacheFile = $cacheDir . 'content_' . md5($pageId) . '.cache';
 
-    if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < $cacheExpiration)) {
+    if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < $specificCacheExpiration)) {
         // Zwróć zdeserializowane dane, aby pętla działała poprawnie z cachem
         $cachedContent = file_get_contents($cacheFile);
         $decodedCachedContent = json_decode($cachedContent, true);
@@ -118,10 +118,11 @@ function getNotionContent($pageId, $apiKey, $cacheDir, $cacheExpiration) {
 }
 
 // Funkcja do obsługi zagnieżdżonych bloków (do przyszłej implementacji)
-function fetchAndRenderChildren($blockId, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString = '') {
-    $childrenData = getNotionContent($blockId, $apiKey, $cacheDir, $cacheExpiration);
+function fetchAndRenderChildren($blockId, $apiKey, $cacheDir, $specificContentCacheExpiration, $currentUrlPathString = '') {
+    $childrenData = getNotionContent($blockId, $apiKey, $cacheDir, $specificContentCacheExpiration);
     $childrenContent = json_decode($childrenData, true);
-    return notionToHtml($childrenContent, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+    global $cacheDurations; // Dostęp do globalnej tablicy
+    return notionToHtml($childrenContent, $apiKey, $cacheDir, $cacheDurations, $currentUrlPathString);
 }
 
 // --- NOWA FUNKCJA POMOCNICZA: Normalizuje tytuł na potrzeby ścieżki URL ---
@@ -137,14 +138,14 @@ function normalizeTitleForPath($title) {
 }
 
 // --- Zaktualizuj funkcję findNotionSubpageId, aby używała nowej funkcji pomocniczej ---
-function findNotionSubpageId($parentPageId, $subpagePath, $apiKey, $cacheDir, $cacheExpiration) {
+function findNotionSubpageId($parentPageId, $subpagePath, $apiKey, $cacheDir, $specificSubpagesCacheExpiration) {
     $subpagePath = trim(strtolower($subpagePath), '/'); 
     if (empty($subpagePath)) return null; 
 
     $cacheFile = $cacheDir . 'subpages_' . md5($parentPageId) . '.cache';
     $subpages = [];
 
-    if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < $cacheExpiration)) {
+    if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < $specificSubpagesCacheExpiration)) {
         $subpages = json_decode(file_get_contents($cacheFile), true);
          // Sprawdź, czy $subpages jest tablicą po dekodowaniu
          if (!is_array($subpages)) {
@@ -191,14 +192,14 @@ function findNotionSubpageId($parentPageId, $subpagePath, $apiKey, $cacheDir, $c
 
 // --- ZMODYFIKOWANA FUNKCJA: Pobiera tytuł i URL okładki strony Notion ---
 // Zwraca: ['title' => string, 'coverUrl' => string|null]
-function getNotionPageTitle($pageId, $apiKey, $cacheDir, $cacheExpiration) {
+function getNotionPageTitle($pageId, $apiKey, $cacheDir, $specificPagedataCacheExpiration) {
     // Zmieniono nazwę cache - przechowuje teraz obiekt/tablicę
     $cacheFile = $cacheDir . 'pagedata_' . md5($pageId) . '.cache'; 
     $defaultTitle = 'Moja strona z zawartością Notion'; 
     $defaultResult = ['title' => $defaultTitle, 'coverUrl' => null];
 
     // Sprawdź cache
-    if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < $cacheExpiration)) {
+    if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < $specificPagedataCacheExpiration)) {
         $cachedData = json_decode(file_get_contents($cacheFile), true);
         // Zwróć dane z cache, jeśli są poprawne (tablica z kluczem 'title')
         if (is_array($cachedData) && isset($cachedData['title'])) {
@@ -255,7 +256,7 @@ function getNotionPageTitle($pageId, $apiKey, $cacheDir, $cacheExpiration) {
 
 // --- ZAKTUALIZOWANA Funkcja formatRichText (z pobieraniem tytułu dla wzmianek) ---
 // Dodano parametry $apiKey, $cacheDir, $cacheExpiration
-function formatRichText($richTextArray, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString = '') {
+function formatRichText($richTextArray, $apiKey, $cacheDir, $specificPagedataCacheExpiration, $currentUrlPathString = '') {
     $text = '';
     
     if (!is_array($richTextArray)) {
@@ -273,7 +274,7 @@ function formatRichText($richTextArray, $apiKey, $cacheDir, $cacheExpiration, $c
                 $mentionedPageTitle = 'Untitled'; // Domyślny tytuł na wypadek błędu
 
                 // Spróbuj pobrać prawdziwy tytuł strony za pomocą istniejącej funkcji
-                $fetchedPageData = getNotionPageTitle($mentionedPageId, $apiKey, $cacheDir, $cacheExpiration);
+                $fetchedPageData = getNotionPageTitle($mentionedPageId, $apiKey, $cacheDir, $specificPagedataCacheExpiration);
                 $mentionedPageTitle = $fetchedPageData['title'] ?? $mentionedPageTitle;
                 
                 // Użyj pobranego tytułu, jeśli nie jest pusty i różni się od domyślnego z getNotionPageTitle
@@ -349,7 +350,7 @@ function formatRichText($richTextArray, $apiKey, $cacheDir, $cacheExpiration, $c
 }
 
 // Konwersja z formatu Notion na HTML (rozszerzona implementacja)
-function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString = '') {
+function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $currentUrlPathString = '') {
     $html = '';
     $inList = false;
     $listType = ''; // 'ul' lub 'ol'
@@ -376,7 +377,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $currentUr
 
             switch ($currentBlockType) {
                 case 'paragraph':
-                    $text = formatRichText($block['paragraph']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $text = formatRichText($block['paragraph']['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                     if (!empty($text) || (isset($block['paragraph']['rich_text']) && empty($block['paragraph']['rich_text']))) { // Renderuj <p> nawet dla pustych tekstów, jeśli blok istnieje
                         $html .= "<p>{$text}</p>\n";
                     } else { // Kiedyś było &nbsp; ale Notion czasem zwraca puste paragrafy
@@ -392,11 +393,11 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $currentUr
                     
                     if (is_numeric($level) && $level >= 1 && $level <= 6) { 
                         $tagName = 'h' . $level; 
-                        $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                        $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                         $html .= "<{$tagName}>{$text}</{$tagName}>\n";
                     } else {
                         error_log("Nieoczekiwany lub niepoprawny typ nagłówka w notionToHtml: " . $key);
-                        $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                        $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                         $html .= "<p><strong>(Błąd nagłówka: {$key})</strong> {$text}</p>\n";
                     }
                     break; 
@@ -405,7 +406,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $currentUr
                 case 'numbered_list_item':
                     $itemKey = $currentBlockType;
                     $itemBlock = $block[$itemKey];
-                    $itemText = formatRichText($itemBlock['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $itemText = formatRichText($itemBlock['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                     $expectedListTag = ($currentBlockType === 'bulleted_list_item') ? 'ul' : 'ol';
 
                     if (!$inList || $listType !== $expectedListTag) {
@@ -420,14 +421,14 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $currentUr
                     $html .= "<li>{$itemText}"; 
 
                     if (isset($block['has_children']) && $block['has_children']) {
-                        $childrenHtml = fetchAndRenderChildren($block['id'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                        $childrenHtml = fetchAndRenderChildren($block['id'], $apiKey, $cacheDir, $cacheDurationsArray['content'], $currentUrlPathString);
                         $html .= $childrenHtml; // Dzieci są renderowane wewnątrz <li>
                     }
                     $html .= "</li>\n"; 
                     break;
                     
                 case 'to_do':
-                    $text = formatRichText($block['to_do']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $text = formatRichText($block['to_do']['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                     $checked = $block['to_do']['checked'] ? ' checked' : '';
                     $html .= "<div class=\"todo-item\"><label><input type=\"checkbox\"{$checked} disabled> {$text}</label></div>\n";
                     break;
@@ -435,7 +436,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $currentUr
                 case 'image':
                     $captionText = '';
                     if (isset($block['image']['caption']) && !empty($block['image']['caption'])) {
-                        $captionText = formatRichText($block['image']['caption'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                        $captionText = formatRichText($block['image']['caption'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                     }
                     
                     $imageUrl = '';
@@ -461,18 +462,18 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $currentUr
                     
                 case 'code':
                     $language = isset($block['code']['language']) ? htmlspecialchars($block['code']['language']) : 'plaintext'; 
-                    $codeContent = formatRichText($block['code']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $codeContent = formatRichText($block['code']['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                     $langClass = !empty($language) ? " class=\"language-{$language}\"" : ' class=\"language-plaintext\"'; // Zawsze dodaj klasę
                     $html .= "<pre><code{$langClass}>{$codeContent}</code></pre>\n"; 
                     break;
                     
                 case 'quote':
-                    $text = formatRichText($block['quote']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $text = formatRichText($block['quote']['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                     $html .= "<blockquote>{$text}</blockquote>\n";
                     break;
                     
                 case 'callout':
-                    $text = formatRichText($block['callout']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $text = formatRichText($block['callout']['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                     $iconHtml = '';
                     if (isset($block['callout']['icon'])) {
                         if (isset($block['callout']['icon']['emoji'])) {
@@ -492,7 +493,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $currentUr
                     $hasColumnHeader = $block['table']['has_column_header'] ?? false;
                     $hasRowHeader = $block['table']['has_row_header'] ?? false;
 
-                    $tableRowsData = getNotionContent($tableBlockId, $apiKey, $cacheDir, $cacheExpiration);
+                    $tableRowsData = getNotionContent($tableBlockId, $apiKey, $cacheDir, $cacheDurationsArray['content']);
                     $tableRowsContent = json_decode($tableRowsData, true);
 
                     if (isset($tableRowsContent['results']) && is_array($tableRowsContent['results'])) {
@@ -506,7 +507,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $currentUr
                                 $cellIndex = 0;
                                 foreach ($headerRowBlock['table_row']['cells'] as $cellRichTextArray) {
                                     $tag = ($hasRowHeader && $cellIndex === 0 && !$hasColumnHeader) ? 'td' : 'th'; // Specjalny przypadek dla pierwszej komórki bez nagłówka kolumn, ale z nagłówkiem wiersza
-                                    $cellContent = formatRichText($cellRichTextArray, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                                    $cellContent = formatRichText($cellRichTextArray, $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                                     $html .= "<{$tag}>{$cellContent}</{$tag}>\n";
                                     $cellIndex++;
                                 }
@@ -521,7 +522,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $currentUr
                                 $cellIndex = 0;
                                 foreach ($rowBlock['table_row']['cells'] as $cellRichTextArray) {
                                     $tag = ($hasRowHeader && $cellIndex === 0) ? 'th' : 'td'; 
-                                    $cellContent = formatRichText($cellRichTextArray, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                                    $cellContent = formatRichText($cellRichTextArray, $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                                     $html .= "<{$tag}>{$cellContent}</{$tag}>\n";
                                     $cellIndex++;
                                 }
@@ -555,11 +556,11 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $currentUr
 
                 // --- NOWE TYPY BLOKÓW ---
                 case 'toggle':
-                    $summaryText = formatRichText($block['toggle']['rich_text'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $summaryText = formatRichText($block['toggle']['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                     $html .= "<details class=\"notion-toggle\"><summary>{$summaryText}</summary>";
                     if (isset($block['has_children']) && $block['has_children']) {
                         $html .= "<div class=\"notion-toggle-content\">";
-                        $html .= fetchAndRenderChildren($block['id'], $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                        $html .= fetchAndRenderChildren($block['id'], $apiKey, $cacheDir, $cacheDurationsArray['content'], $currentUrlPathString);
                         $html .= "</div>";
                     }
                     $html .= "</details>\n";
@@ -568,7 +569,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $currentUr
                 case 'bookmark':
                     $url = $block['bookmark']['url'] ?? '#';
                     $captionArray = $block['bookmark']['caption'] ?? [];
-                    $captionText = formatRichText($captionArray, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $captionText = formatRichText($captionArray, $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                     // Notion API nie dostarcza metadanych (tytuł, opis, ikona) dla zakładek.
                     // Można by je pobrać serwerowo (wolne) lub zaimplementować po stronie klienta.
                     // Na razie prosty link.
@@ -583,7 +584,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $currentUr
                 case 'embed':
                     $url = $block['embed']['url'] ?? '';
                     $captionArray = $block['embed']['caption'] ?? [];
-                    $captionText = formatRichText($captionArray, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $captionText = formatRichText($captionArray, $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                     $html .= "<div class=\"notion-embed\">";
                     if (filter_var($url, FILTER_VALIDATE_URL)) {
                         // Prosta logika dla YouTube i Vimeo, można rozbudować
@@ -609,7 +610,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $currentUr
                 case 'video':
                     $videoUrl = '';
                     $captionArray = $block['video']['caption'] ?? [];
-                    $captionText = formatRichText($captionArray, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $captionText = formatRichText($captionArray, $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                     $videoType = $block['video']['type'] ?? null;
 
                     if ($videoType === 'external' && isset($block['video']['external']['url'])) {
@@ -635,7 +636,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheExpiration, $currentUr
                     $fileUrl = '';
                     $fileName = 'Plik'; 
                     $captionArray = $block['file']['caption'] ?? [];
-                    $captionText = formatRichText($captionArray, $apiKey, $cacheDir, $cacheExpiration, $currentUrlPathString);
+                    $captionText = formatRichText($captionArray, $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                     $fileType = $block['file']['type'] ?? null;
 
                     if ($fileType === 'external' && isset($block['file']['external']['url'])) {
@@ -752,7 +753,7 @@ if (empty($requestPath)) {
         // Usuń potencjalne query stringi z segmentu, np. title?param=val -> title
         $segmentName = strtok($segment, '?');
 
-        $foundSubpageId = findNotionSubpageId($currentParentIdToSearch, $segmentName, $notionApiKey, $cacheDir, $cacheExpiration);
+        $foundSubpageId = findNotionSubpageId($currentParentIdToSearch, $segmentName, $notionApiKey, $cacheDir, $cacheDurations['subpages']);
         
         if ($foundSubpageId === null) {
             $resolvedPageId = null; // Segment nie został znaleziony, przerwij
@@ -787,7 +788,7 @@ if ($pageNotFound) {
 
 } elseif ($currentPageId) {
     // --- Pobierz dane strony (tytuł i okładkę) ---
-    $pageData = getNotionPageTitle($currentPageId, $notionApiKey, $cacheDir, $cacheExpiration);
+    $pageData = getNotionPageTitle($currentPageId, $notionApiKey, $cacheDir, $cacheDurations['pagedata']);
     $pageTitle = $pageData['title'];
     $pageCoverUrl = $pageData['coverUrl']; // Zapisz URL okładki
 
@@ -797,7 +798,7 @@ if ($pageNotFound) {
         $mainPageTitle = $pageTitle; 
     } else { 
         // Pobierz dane strony głównej (potrzebne dla og:title i breadcrumbs)
-        $mainPageData = getNotionPageTitle($notionPageId, $notionApiKey, $cacheDir, $cacheExpiration);
+        $mainPageData = getNotionPageTitle($notionPageId, $notionApiKey, $cacheDir, $cacheDurations['pagedata']);
         $mainPageTitle = $mainPageData['title'];
         $ogTitle = $mainPageTitle . ' - ' . $pageTitle; 
     }
@@ -808,7 +809,7 @@ if ($pageNotFound) {
     $metaDescription = mb_substr($metaDescription, 0, 160); 
 
     // Pobierz treść strony
-    $notionData = getNotionContent($currentPageId, $notionApiKey, $cacheDir, $cacheExpiration);
+    $notionData = getNotionContent($currentPageId, $notionApiKey, $cacheDir, $cacheDurations['content']);
     $notionContent = json_decode($notionData, true);
 
     if (isset($notionContent['error'])) {
@@ -826,7 +827,7 @@ if ($pageNotFound) {
         }
     } else {
         // Renderuj zawartość do HTML
-        $htmlContent = notionToHtml($notionContent, $notionApiKey, $cacheDir, $cacheExpiration, $requestPath);
+        $htmlContent = notionToHtml($notionContent, $notionApiKey, $cacheDir, $cacheDurations, $requestPath);
 
         // --- POPRAWIONA LINIA: Usuwanie bloków z encjami HTML ---
         $htmlContent = preg_replace('/&lt;hide&gt;.*?&lt;\/hide&gt;/si', '', $htmlContent);
