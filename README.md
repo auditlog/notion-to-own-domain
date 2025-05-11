@@ -32,14 +32,17 @@ This is a simple PHP project designed to fetch content from a specific Notion pa
 ├── private/
 │   ├── cache/          # Cache directory (the script will attempt to create it if it doesn't exist, but write permissions for the web server are required for the `private/` directory)
 │   ├── config.php      # Configuration file (API key, page ID, cache, password) - **DO NOT COMMIT**
-│   └── config_draft.php # Example configuration file / template
+│   ├── config_draft.php # Example configuration file / template
+│   ├── notion_utils.php # Utility functions for Notion API interaction, caching, and HTML rendering
+│   └── views/
+│       └── main_template.php # Main HTML template for the page structure
 ├── public_html/
 │   ├── css/
 │   │   └── style.css   # Main stylesheet
 │   ├── js/
 │   │   └── main.js     # Main JavaScript file (TOC, lightbox)
 │   ├── .htaccess       # Apache configuration (URL rewriting for hierarchical routing, SetEnv, cache, errors)
-│   ├── index.php       # Main application file (hierarchical routing, API calls, HTML/meta rendering, tag processing)
+│   ├── index.php       # Main application file: handles routing, includes configuration and utilities, orchestrates data fetching and passes it to the template.
 │   ├── error.php       # Simple error page handler
 │   └── robots.txt      # Instructions for web crawlers and AI bots
 ├── .gitignore          # Specifies intentionally untracked files for Git
