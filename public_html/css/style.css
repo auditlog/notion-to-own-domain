@@ -1,0 +1,286 @@
+body {
+    font-family: Arial, sans-serif;
+    line-height: 1.6;
+    color: #333;
+    margin: 0;
+    padding: 0;
+    background-color: #f9f9f9;
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #fff;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    margin-top: 10px;
+    padding-top: 20px;
+    padding-right: 20px;
+    padding-bottom: 20px;
+    padding-left: 20px;
+}
+
+header {
+    margin-top: 0;
+    padding-top: 0;
+    margin-bottom: 30px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+}
+
+.content {
+    margin-bottom: 40px;
+}
+
+h2, h3 {
+    color: #222;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+}
+
+p {
+    margin-bottom: 1em;
+}
+
+ul, ol {
+    margin-bottom: 1em;
+    padding-left: 2em;
+}
+
+li {
+    margin-bottom: 0.5em;
+}
+
+blockquote {
+    border-left: 4px solid #ddd;
+    padding-left: 1em;
+    margin-left: 0;
+    color: #666;
+}
+
+code {
+    background-color: #f5f5f5;
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-family: monospace;
+}
+
+pre {
+    background-color: #f5f5f5;
+    padding: 1em;
+    border-radius: 5px;
+    overflow-x: auto;
+}
+
+pre code {
+    background-color: transparent;
+    padding: 0;
+}
+
+img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 1em 0;
+}
+
+figure {
+    margin: 1.5em 0;
+}
+
+figcaption {
+    font-size: 0.9em;
+    color: #666;
+    text-align: center;
+    margin-top: 0.5em;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid #eee;
+    margin: 2em 0;
+}
+
+.callout {
+    background-color: #f0f7ff;
+    border-left: 4px solid #4a90e2;
+    padding: 1em;
+    margin: 1em 0;
+    border-radius: 0 5px 5px 0;
+}
+
+.todo-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.5em;
+}
+
+.todo-item input[type="checkbox"] {
+    margin-right: 0.5em;
+}
+
+.error-message {
+    background-color: #ffeeee;
+    border-left: 4px solid #ff5555;
+    padding: 1em;
+    margin: 1em 0;
+    color: #cc0000;
+}
+
+.unsupported-block {
+    background-color: #fffbe6;
+    border: 1px dashed #e6c000;
+    padding: 0.5em;
+    margin: 1em 0;
+    font-style: italic;
+    color: #7c6500;
+}
+
+.table-placeholder {
+    background-color: #eee;
+    padding: 1em;
+    margin: 1em 0;
+    text-align: center;
+    border-radius: 5px;
+}
+
+footer {
+    border-top: 1px solid #eee;
+    padding-top: 10px;
+    font-size: 0.8em;
+    color: #666;
+    text-align: center;
+}
+
+a {
+    color: #0066cc;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+@media (max-width: 600px) {
+    .container {
+        padding: 10px;
+    }
+}
+
+/* Style dla tabel Notion */
+.table-wrapper {
+    width: 100%;
+    overflow-x: auto; /* Umożliwia przewijanie tabeli w poziomie na małych ekranach */
+    margin: 1.5em 0;
+}
+
+.notion-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid #ddd;
+    font-size: 0.95em;
+}
+
+.notion-table th,
+.notion-table td {
+    border: 1px solid #ddd;
+    padding: 0.6em 0.8em;
+    text-align: left;
+    vertical-align: top; /* Lepsze dla komórek z wieloma liniami */
+}
+
+.notion-table thead th {
+    background-color: #f9f9f9;
+    font-weight: bold;
+    border-bottom: 2px solid #ccc;
+}
+
+/* Styl dla nagłówków wierszy (jeśli są używane - has_row_header: true) */
+.notion-table tbody th {
+    background-color: #f9f9f9;
+    font-weight: bold;
+}
+
+.notion-table tbody tr:nth-child(even) {
+    background-color: #fdfdfd; /* Delikatne pasy zebry dla czytelności */
+}
+
+.notion-table p:last-child {
+    margin-bottom: 0; /* Usuń dodatkowy margines z ostatniego paragrafu w komórce */
+}
+
+.table-placeholder { /* Istniejący styl dla komunikatów zastępczych */
+    background-color: #eee;
+    padding: 1em;
+    margin: 1em 0;
+    text-align: center;
+    border-radius: 5px;
+    color: #666;
+}
+
+/* NOWE STYLE DLA OKŁADKI NA PEŁNĄ SZEROKOŚĆ */
+.page-cover-fullwidth-wrapper {
+    width: 100%; /* Pełna szerokość okna przeglądarki */
+    /* Ustaw wysokość - możesz użyć % viewportu (vh) lub stałej wartości px */
+    /* Notion często używa ok. 30% wysokości okna dla okładek */
+    height: 30vh; 
+    max-height: 400px; /* Ograniczenie maksymalnej wysokości */
+    min-height: 150px; /* Ograniczenie minimalnej wysokości */
+    overflow: hidden; /* Ukryj części obrazka wychodzące poza kontener */
+    position: relative; /* Potrzebne, jeśli chcesz dodawać elementy na wierzchu */
+    line-height: 0; /* Usuń potencjalny odstęp pod obrazkiem */
+    margin-bottom: 0;
+}
+
+.page-cover-fullwidth-image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Kluczowe: skaluje obrazek, aby pokrył kontener, przycinając go */
+    object-position: center; /* Wycentruj obrazek podczas przycinania (pionowo i poziomo) */
+}
+
+/* UPEWNIJ SIĘ, ŻE PONIŻSZE POPRAWNE REGUŁY ISTNIEJĄ I SĄ AKTYWNE: */
+
+/* Globalny styl tylko dla h2 i h3 */
+h2, h3 {
+    color: #222;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+}
+
+/* Styl dla kontenera - przywróć mały padding-top */
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    background-color: #fff;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    margin-top: 10px; /* Odstęp ZEWNĘTRZNY pod okładką */
+    
+    /* PRZYWRÓĆ LUB USTAW MAŁY WEWNĘTRZNY PADDING GÓRNY */
+    /* padding-top: 0; */ /* Zmień tę wartość */
+    padding-top: 20px;  /* Np. 20px - dostosuj według potrzeb */
+
+    /* Zachowaj pozostałe paddingi */
+    padding-right: 20px; 
+    padding-bottom: 20px; 
+    padding-left: 20px; 
+}
+
+/* Styl dla nagłówka w kontenerze - z wyzerowanym margin/padding-top */
+.container header {
+    margin-top: 0;
+    padding-top: 0;
+    margin-bottom: 30px; 
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px; 
+}
+
+/* Styl dla H1 w nagłówku kontenera */
+.container header h1 {
+    font-size: 2em; 
+    color: #222; 
+    margin-top: 0; 
+    margin-bottom: 0.5em; 
+    line-height: 1.1; 
+}

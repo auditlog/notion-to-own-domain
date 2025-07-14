@@ -1,0 +1,19 @@
+# Configuration files with sensitive data
+private/config.php
+
+# Cache directory contents
+private/cache/*
+!private/cache/.gitkeep
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
