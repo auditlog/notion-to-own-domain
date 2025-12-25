@@ -4,6 +4,9 @@ private/config.php
 # Claude Code instructions
 CLAUDE.md
 
+# Development plan
+plan.md
+
 # Cache directory contents
 private/cache/*
 !private/cache/.gitkeep
