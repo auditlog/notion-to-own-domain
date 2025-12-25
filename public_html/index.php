@@ -1,20 +1,20 @@
 <?php
-// Error reporting only for local development
-if (in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1']) ||
-    ($_SERVER['HTTP_HOST'] ?? '') === 'localhost') {
-    error_reporting(E_ALL);
-    ini_set('display_errors', 1);
-} else {
-    error_reporting(0);
-    ini_set('display_errors', 0);
-}
+// Disable error display by default (safe for production)
+error_reporting(0);
+ini_set('display_errors', 0);
+
 // --- START SESJI ---
-// Musi być na samym początku pliku
-session_start(); 
+session_start();
 // --- KONIEC START SESJI ---
 
 // Include configuration (outside public directory)
 require_once '../private/config.php';
+
+// Enable error reporting only if debug mode is enabled in config
+if (isset($debugMode) && $debugMode === true) {
+    error_reporting(E_ALL);
+    ini_set('display_errors', 1);
+}
 // Include Notion helper functions
 require_once '../private/notion_utils.php';
 // Include security headers

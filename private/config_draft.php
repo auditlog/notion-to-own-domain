@@ -1,4 +1,7 @@
 <?php
+// Debug mode - set to true only for local development
+$debugMode = false;
+
 // Próba pobrania tokena z zmiennej środowiskowej (preferowane)
 $notionApiKey = getenv('NOTION_API_KEY');
 

@@ -38,7 +38,7 @@ class NotionUtilsTest extends TestCase
     }
 
     /**
-     * Test normalizeTitleForPath removes Polish characters
+     * Test normalizeTitleForPath removes Polish characters (lowercase)
      */
     public function testNormalizeTitleRemovesPolishCharacters()
     {
@@ -50,6 +50,17 @@ class NotionUtilsTest extends TestCase
         $this->assertEquals('c', normalizeTitleForPath('ć'));
         $this->assertEquals('z', normalizeTitleForPath('ź'));
         $this->assertEquals('z', normalizeTitleForPath('ż'));
+    }
+
+    /**
+     * Test normalizeTitleForPath handles uppercase Polish characters
+     */
+    public function testNormalizeTitleHandlesUppercasePolishCharacters()
+    {
+        $this->assertEquals('zolw', normalizeTitleForPath('ŻÓŁW'));
+        $this->assertEquals('zolc', normalizeTitleForPath('ŻÓŁĆ'));
+        $this->assertEquals('aecln', normalizeTitleForPath('ĄĘĆŁŃ'));
+        $this->assertEquals('oszzz', normalizeTitleForPath('ÓŚŹŻŻ'));
     }
 
     /**

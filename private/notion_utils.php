@@ -156,7 +156,8 @@ function fetchAndRenderChildren($blockId, $apiKey, $cacheDir, $specificContentCa
 }
 
 function normalizeTitleForPath($title) {
-    $path = strtolower($title);
+    // Use mb_strtolower to properly handle UTF-8 characters including Polish
+    $path = mb_strtolower($title, 'UTF-8');
 
     // Transliterate Polish characters
     $polishChars = ['ą', 'ć', 'ę', 'ł', 'ń', 'ó', 'ś', 'ź', 'ż'];
