@@ -10,7 +10,28 @@ if (file_exists(__DIR__ . '/../.debug')) {
 }
 
 // --- START SESJI ---
+// Configure secure session cookies
+session_set_cookie_params([
+    'lifetime' => 0,           // Session cookie (deleted on browser close)
+    'path' => '/',
+    'domain' => '',            // Current domain only
+    'secure' => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+    'httponly' => true,        // Prevent JavaScript access
+    'samesite' => 'Lax'        // CSRF protection
+]);
 session_start();
+
+// Session timeout after 15 minutes of inactivity
+$sessionTimeout = 900; // 15 minutes
+if (isset($_SESSION['last_activity'])) {
+    if (time() - $_SESSION['last_activity'] > $sessionTimeout) {
+        // Session expired - destroy and restart
+        session_unset();
+        session_destroy();
+        session_start();
+    }
+}
+$_SESSION['last_activity'] = time();
 
 // Generate CSRF token if not exists
 if (empty($_SESSION['csrf_token'])) {
@@ -34,33 +55,62 @@ maybeCacheCleanup($cacheDir, 0.01, 604800);
 $passwordVerified = $_SESSION['password_verified'] ?? false;
 $passwordError = false;
 $csrfError = false;
+$lockoutError = false;
+
+// Brute-force protection settings
+$maxPasswordAttempts = 3;
+$passwordLockoutDuration = 300; // 5 minutes
+
+// Initialize attempt tracking
+if (!isset($_SESSION['password_attempts'])) {
+    $_SESSION['password_attempts'] = 0;
+    $_SESSION['password_lockout_until'] = 0;
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content_password'])) {
-    // Validate CSRF token first
-    $submittedToken = $_POST['csrf_token'] ?? '';
-    if (!hash_equals($_SESSION['csrf_token'] ?? '', $submittedToken)) {
-        $csrfError = true;
-        $passwordError = true; // Show generic error to user
+    // Check if locked out
+    if ($_SESSION['password_lockout_until'] > time()) {
+        $lockoutError = true;
+        $passwordError = true;
     } else {
-        // Password validation - limit length and special characters
-        $submittedPassword = $_POST['content_password'];
-
-        // Check password length (max 100 characters to prevent DoS attacks)
-        if (strlen($submittedPassword) > 100) {
-            $passwordError = true;
+        // Validate CSRF token first
+        $submittedToken = $_POST['csrf_token'] ?? '';
+        if (!hash_equals($_SESSION['csrf_token'] ?? '', $submittedToken)) {
+            $csrfError = true;
+            $passwordError = true; // Show generic error to user
         } else {
-            // Constant-time comparison (protection against timing attacks)
-            if (hash_equals($contentPassword, $submittedPassword)) {
-                $_SESSION['password_verified'] = true;
-                $passwordVerified = true;
+            // Password validation - limit length and special characters
+            $submittedPassword = $_POST['content_password'];
 
-                // Redirect to avoid form resubmission on refresh
-                // Sanitize URI before redirecting
-                $redirectURI = filter_var($_SERVER['REQUEST_URI'], FILTER_SANITIZE_URL);
-                header('Location: ' . $redirectURI);
-                exit;
-            } else {
+            // Check password length (max 100 characters to prevent DoS attacks)
+            if (strlen($submittedPassword) > 100) {
                 $passwordError = true;
+                $_SESSION['password_attempts']++;
+            } else {
+                // Constant-time comparison (protection against timing attacks)
+                if (hash_equals($contentPassword, $submittedPassword)) {
+                    // Success - reset attempts and verify
+                    $_SESSION['password_attempts'] = 0;
+                    $_SESSION['password_lockout_until'] = 0;
+                    $_SESSION['password_verified'] = true;
+                    $passwordVerified = true;
+
+                    // Redirect to avoid form resubmission on refresh
+                    // Sanitize URI before redirecting
+                    $redirectURI = filter_var($_SERVER['REQUEST_URI'], FILTER_SANITIZE_URL);
+                    header('Location: ' . $redirectURI);
+                    exit;
+                } else {
+                    $passwordError = true;
+                    $_SESSION['password_attempts']++;
+                }
+            }
+
+            // Check if max attempts reached - apply lockout
+            if ($_SESSION['password_attempts'] >= $maxPasswordAttempts) {
+                $_SESSION['password_lockout_until'] = time() + $passwordLockoutDuration;
+                $_SESSION['password_attempts'] = 0;
+                $lockoutError = true;
             }
         }
     }
@@ -199,8 +249,8 @@ if ($pageNotFound) {
         $htmlContent = preg_replace('/&lt;hide&gt;.*?&lt;\/hide&gt;/si', '', $htmlContent);
 
         // --- NEW LINE: Processing <pass> tags ---
-        // Pass the password verification result ($passwordVerified), any error ($passwordError), and CSRF token
-        $htmlContent = processPasswordTags($htmlContent, $passwordVerified, $passwordError, $_SESSION['csrf_token']);
+        // Pass the password verification result, errors, CSRF token, and lockout status
+        $htmlContent = processPasswordTags($htmlContent, $passwordVerified, $passwordError, $_SESSION['csrf_token'], $lockoutError);
 
         // Additional protection against XSS from untrusted sources
         // Remove potentially dangerous JavaScript scripts

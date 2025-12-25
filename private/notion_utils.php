@@ -634,8 +634,8 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
     return $html;
 }
 
-function processPasswordTags($html, $isVerified, $error, $csrfToken = '') {
-    return preg_replace_callback('/&lt;pass&gt;(.*?)&lt;\/pass&gt;/si', function($matches) use ($isVerified, $error, $csrfToken) {
+function processPasswordTags($html, $isVerified, $error, $csrfToken = '', $lockoutError = false) {
+    return preg_replace_callback('/&lt;pass&gt;(.*?)&lt;\/pass&gt;/si', function($matches) use ($isVerified, $error, $csrfToken, $lockoutError) {
         if ($isVerified) {
             // Even for verified users, additional content cleaning
             // Remove potentially dangerous tags before returning content
@@ -644,15 +644,21 @@ function processPasswordTags($html, $isVerified, $error, $csrfToken = '') {
             return html_entity_decode($content, ENT_QUOTES, 'UTF-8');
         } else {
             // Nie weryfikowano hasła - pokaż formularz
-            $errorHtml = $error ? '<div class="password-error">Nieprawidłowe hasło</div>' : '';
+            $errorHtml = '';
+            if ($lockoutError) {
+                $errorHtml = '<div class="password-error">Zbyt wiele prób. Spróbuj ponownie za kilka minut.</div>';
+            } elseif ($error) {
+                $errorHtml = '<div class="password-error">Nieprawidłowe hasło</div>';
+            }
             $csrfInput = $csrfToken ? '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') . '">' : '';
+            $disabledAttr = $lockoutError ? ' disabled' : '';
             return '
                 <div class="password-protected">
                     <h3>Ta treść jest chroniona hasłem</h3>
                     <form method="post">
                         ' . $csrfInput . '
-                        <input type="password" name="content_password" placeholder="Wprowadź hasło" required>
-                        <button type="submit">Odblokuj</button>
+                        <input type="password" name="content_password" placeholder="Wprowadź hasło" required' . $disabledAttr . '>
+                        <button type="submit"' . $disabledAttr . '>Odblokuj</button>
                     </form>
                     ' . $errorHtml . '
                 </div>';
