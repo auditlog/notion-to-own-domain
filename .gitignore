@@ -1,6 +1,9 @@
 # Configuration files with sensitive data
 private/config.php
 
+# Claude Code instructions
+CLAUDE.md
+
 # Cache directory contents
 private/cache/*
 !private/cache/.gitkeep
