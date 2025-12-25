@@ -29,7 +29,7 @@ function getNotionContent($pageId, $apiKey, $cacheDir, $specificCacheExpiration)
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             'Authorization: Bearer ' . $apiKey,
-            'Notion-Version: 2022-06-28'
+            'Notion-Version: 2025-09-03'
         ]);
 
         $response = curl_exec($ch);
@@ -125,7 +125,7 @@ function findNotionSubpageId($parentPageId, $subpagePath, $apiKey, $cacheDir, $s
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
             curl_setopt($ch, CURLOPT_HTTPHEADER, [
                 'Authorization: Bearer ' . $apiKey,
-                'Notion-Version: 2022-06-28'
+                'Notion-Version: 2025-09-03'
             ]);
             $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -176,7 +176,7 @@ function getNotionPageTitle($pageId, $apiKey, $cacheDir, $specificPagedataCacheE
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         'Authorization: Bearer ' . $apiKey,
-        'Notion-Version: 2022-06-28'
+        'Notion-Version: 2025-09-03'
     ]);
     
     $response = curl_exec($ch);
