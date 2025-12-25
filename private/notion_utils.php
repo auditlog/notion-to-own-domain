@@ -427,7 +427,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
                     }
                     if ($imageUrl) {
                         $html .= "<figure>";
-                        $html .= "<img src=\"{$imageUrl}\" alt=\"" . htmlspecialchars(strip_tags($captionText) ?: 'Obrazek') . "\">";
+                        $html .= "<img src=\"{$imageUrl}\" alt=\"" . htmlspecialchars(strip_tags($captionText) ?: 'Obrazek') . "\" loading=\"lazy\">";
                         if ($captionText) {
                             $html .= "<figcaption>{$captionText}</figcaption>";
                         }
@@ -455,7 +455,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
                             $iconHtml = "<span class=\"callout-emoji\">" . htmlspecialchars($block['callout']['icon']['emoji']) . "</span> ";
                         } elseif (isset($block['callout']['icon']['external']['url'])) {
                             $iconUrl = $block['callout']['icon']['external']['url'];
-                            $iconHtml = "<img src=\"{$iconUrl}\" alt=\"ikona\" class=\"callout-icon-external\"> ";
+                            $iconHtml = "<img src=\"{$iconUrl}\" alt=\"ikona\" class=\"callout-icon-external\" loading=\"lazy\"> ";
                         }
                     }
                     $html .= "<div class=\"callout\">{$iconHtml}{$text}</div>\n";
