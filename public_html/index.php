@@ -16,6 +16,9 @@ require_once '../private/security_headers.php';
 // Set security headers
 setSecurityHeaders();
 
+// Probabilistic cache cleanup (1% chance per request, removes files older than 1 week)
+maybeCacheCleanup($cacheDir, 0.01, 604800);
+
 // --- PASSWORD VERIFICATION HANDLING ---
 $passwordVerified = $_SESSION['password_verified'] ?? false;
 $passwordError = false;
