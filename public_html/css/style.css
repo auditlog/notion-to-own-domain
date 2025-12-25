@@ -420,3 +420,64 @@ h2, h3 {
 .notion-pink-bg { background-color: #f8e4ec; padding: 0.1em 0.3em; border-radius: 3px; }
 .notion-red { color: red; }
 .notion-red-bg { background-color: #f8e4e4; padding: 0.1em 0.3em; border-radius: 3px; }
+
+/* Table of Contents */
+.table-of-contents {
+    background-color: #f9f9f9;
+    padding: 15px;
+    margin-bottom: 30px;
+    border: 1px solid #eee;
+    border-radius: 5px;
+}
+
+.table-of-contents h2 {
+    margin-top: 0;
+}
+
+.table-of-contents li.toc-h2 {
+    margin-left: 20px;
+}
+
+.table-of-contents li.toc-h3 {
+    margin-left: 40px;
+}
+
+/* Lightbox for images */
+.content img {
+    cursor: pointer;
+}
+
+.image-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.image-overlay-content {
+    position: relative;
+    max-width: 90%;
+    max-height: 90%;
+}
+
+.image-overlay img {
+    max-width: 100%;
+    max-height: 90vh;
+    margin: 0;
+}
+
+.close-overlay {
+    position: absolute;
+    top: -40px;
+    right: 0;
+    background-color: white;
+    border: none;
+    padding: 5px 10px;
+    cursor: pointer;
+}
