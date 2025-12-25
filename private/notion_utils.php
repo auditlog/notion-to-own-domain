@@ -634,8 +634,8 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
     return $html;
 }
 
-function processPasswordTags($html, $isVerified, $error) {
-    return preg_replace_callback('/&lt;pass&gt;(.*?)&lt;\/pass&gt;/si', function($matches) use ($isVerified, $error) {
+function processPasswordTags($html, $isVerified, $error, $csrfToken = '') {
+    return preg_replace_callback('/&lt;pass&gt;(.*?)&lt;\/pass&gt;/si', function($matches) use ($isVerified, $error, $csrfToken) {
         if ($isVerified) {
             // Even for verified users, additional content cleaning
             // Remove potentially dangerous tags before returning content
@@ -645,10 +645,12 @@ function processPasswordTags($html, $isVerified, $error) {
         } else {
             // Nie weryfikowano hasła - pokaż formularz
             $errorHtml = $error ? '<div class="password-error">Nieprawidłowe hasło</div>' : '';
+            $csrfInput = $csrfToken ? '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8') . '">' : '';
             return '
                 <div class="password-protected">
                     <h3>Ta treść jest chroniona hasłem</h3>
                     <form method="post">
+                        ' . $csrfInput . '
                         <input type="password" name="content_password" placeholder="Wprowadź hasło" required>
                         <button type="submit">Odblokuj</button>
                     </form>

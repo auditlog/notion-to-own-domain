@@ -25,9 +25,14 @@ $cacheExpiration = $cacheDurations['content']; // 3600 = 1 godzina
 // Katalog cache
 $cacheDir = __DIR__ . '/cache/';
 
-// --- NOWA ZMIENNA: Hasło do ukrytej treści ---
-$contentPassword = 'your_secret_password_here'; // Zmień na silne hasło! Używane przez tagi <pass>
-// --- KONIEC NOWEJ ZMIENNEJ ---
+// --- Hasło do ukrytej treści (tagi <pass>) ---
+$contentPassword = getenv('CONTENT_PASSWORD');
+
+// Fallback dla developmentu - w produkcji użyj zmiennej środowiskowej!
+if (!$contentPassword) {
+    $contentPassword = 'your_secret_password_here'; // Zmień na silne hasło!
+}
+// --- KONIEC HASŁA ---
 
 // Upewnij się, że katalog cache istnieje
 if (!file_exists($cacheDir) && !is_dir($cacheDir)) {

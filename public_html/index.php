@@ -11,6 +11,11 @@ if (file_exists(__DIR__ . '/../.debug')) {
 
 // --- START SESJI ---
 session_start();
+
+// Generate CSRF token if not exists
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
 // --- KONIEC START SESJI ---
 
 // Include configuration (outside public directory)
@@ -28,27 +33,35 @@ maybeCacheCleanup($cacheDir, 0.01, 604800);
 // --- PASSWORD VERIFICATION HANDLING ---
 $passwordVerified = $_SESSION['password_verified'] ?? false;
 $passwordError = false;
+$csrfError = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content_password'])) {
-    // Password validation - limit length and special characters
-    $submittedPassword = $_POST['content_password'];
-
-    // Check password length (max 100 characters to prevent DoS attacks)
-    if (strlen($submittedPassword) > 100) {
-        $passwordError = true;
+    // Validate CSRF token first
+    $submittedToken = $_POST['csrf_token'] ?? '';
+    if (!hash_equals($_SESSION['csrf_token'] ?? '', $submittedToken)) {
+        $csrfError = true;
+        $passwordError = true; // Show generic error to user
     } else {
-        // Constant-time comparison (protection against timing attacks)
-        if (hash_equals($contentPassword, $submittedPassword)) {
-            $_SESSION['password_verified'] = true;
-            $passwordVerified = true;
+        // Password validation - limit length and special characters
+        $submittedPassword = $_POST['content_password'];
 
-            // Redirect to avoid form resubmission on refresh
-            // Sanitize URI before redirecting
-            $redirectURI = filter_var($_SERVER['REQUEST_URI'], FILTER_SANITIZE_URL);
-            header('Location: ' . $redirectURI);
-            exit;
-        } else {
+        // Check password length (max 100 characters to prevent DoS attacks)
+        if (strlen($submittedPassword) > 100) {
             $passwordError = true;
+        } else {
+            // Constant-time comparison (protection against timing attacks)
+            if (hash_equals($contentPassword, $submittedPassword)) {
+                $_SESSION['password_verified'] = true;
+                $passwordVerified = true;
+
+                // Redirect to avoid form resubmission on refresh
+                // Sanitize URI before redirecting
+                $redirectURI = filter_var($_SERVER['REQUEST_URI'], FILTER_SANITIZE_URL);
+                header('Location: ' . $redirectURI);
+                exit;
+            } else {
+                $passwordError = true;
+            }
         }
     }
 }
@@ -186,8 +199,8 @@ if ($pageNotFound) {
         $htmlContent = preg_replace('/&lt;hide&gt;.*?&lt;\/hide&gt;/si', '', $htmlContent);
 
         // --- NEW LINE: Processing <pass> tags ---
-        // Pass the password verification result ($passwordVerified) and any error ($passwordError)
-        $htmlContent = processPasswordTags($htmlContent, $passwordVerified, $passwordError);
+        // Pass the password verification result ($passwordVerified), any error ($passwordError), and CSRF token
+        $htmlContent = processPasswordTags($htmlContent, $passwordVerified, $passwordError, $_SESSION['csrf_token']);
 
         // Additional protection against XSS from untrusted sources
         // Remove potentially dangerous JavaScript scripts

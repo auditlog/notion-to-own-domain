@@ -28,7 +28,7 @@ This is a simple PHP project designed to fetch content from a specific Notion pa
     *   Simple lightbox effect for images.
 *   **Content Hiding**: Allows hiding specific sections of Notion content from the rendered webpage by wrapping them in `<hide>` and `</hide>` tags within the Notion page's text blocks. This is processed after the HTML is generated.
     *   **Example Use Case:** If you provide navigation to subpages within a table or main text, you can hide the default list of subpage links (generated from Notion's `child_page` blocks) by placing `<hide>` before the first child page block and `</hide>` after the last one in your Notion document.
-*   **Password Protection**: Allows protecting specific sections of Notion content with a password. Wrap the content in `<pass>` and `</pass>` tags within the Notion page's text blocks. Users will be prompted for a password (defined in `private/config.php`) to view the content. This feature uses PHP sessions to remember verification status.
+*   **Password Protection**: Allows protecting specific sections of Notion content with a password. Wrap the content in `<pass>` and `</pass>` tags within the Notion page's text blocks. Users will be prompted for a password (configurable via `CONTENT_PASSWORD` environment variable or in `private/config.php`) to view the content. This feature uses PHP sessions to remember verification status and includes CSRF protection.
 *   **Basic Error Handling**: Includes a simple `error.php` page for 404 and 500 errors.
 *   **Simple Setup**: Requires minimal configuration.
 
@@ -68,7 +68,9 @@ This is a simple PHP project designed to fetch content from a specific Notion pa
     *   **Method 1 (Recommended: Environment Variable):** Set the `NOTION_API_KEY` environment variable on your server (e.g., via hosting panel or `SetEnv` in `.htaccess`).
     *   **Method 2 (Alternative: Direct Edit - Less Secure):** Edit `private/config.php` and assign your key to `$notionApiKey` within the `if` block. **Ensure `private/config.php` is in `.gitignore`.**
 3.  **Configure Notion Page ID:** Edit `private/config.php` and set `$notionPageId` to your main Notion page ID.
-4.  **Configure Content Password (Optional):** Edit `private/config.php` and set a strong `$contentPassword` if you plan to use the `<pass>` tag feature.
+4.  **Configure Content Password (Optional):** If you plan to use the `<pass>` tag feature:
+    *   **Method 1 (Recommended: Environment Variable):** Set the `CONTENT_PASSWORD` environment variable on your server.
+    *   **Method 2 (Alternative: Direct Edit):** Edit `private/config.php` and set `$contentPassword` to a strong password.
 5.  **Configure Cache:**
     *   Ensure `private/cache/` exists and is writable by the web server (the script will attempt to create the `cache/` directory if it doesn't exist, but write permissions for the web server are still needed for the parent `private/` directory).
     *   Edit `private/config.php` and adjust the values in the `$cacheDurations` array to set appropriate cache lifetimes (in seconds) for `'content'`, `'pagedata'`, `'subpages'`, and `'mentions'`. For example, page content might be cached for an hour (`3600`), page metadata for 2 hours (`7200`), subpage lists for a day (`86400`), and page mentions for a week (`604800`).
