@@ -111,33 +111,49 @@ function findNotionSubpageId($parentPageId, $subpagePath, $apiKey, $cacheDir, $s
             unlink($cacheFile); 
          }
     } else {
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, "https://api.notion.com/v1/blocks/{$parentPageId}/children?page_size=100");
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: Bearer ' . $apiKey,
-            'Notion-Version: 2022-06-28'
-        ]);
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+        $nextCursor = null;
+        $hasMore = false;
 
-        if ($httpCode == 200) {
-            $data = json_decode($response, true);
-            if (isset($data['results'])) {
-                foreach ($data['results'] as $block) {
-                    if ($block['type'] === 'child_page' && isset($block['child_page']['title'])) {
-                        $title = $block['child_page']['title'];
-                        $normalizedTitle = normalizeTitleForPath($title); 
-                        if (!empty($normalizedTitle)) {
-                           $subpages[$normalizedTitle] = $block['id'];
+        do {
+            $url = "https://api.notion.com/v1/blocks/{$parentPageId}/children?page_size=100";
+            if ($nextCursor) {
+                $url .= "&start_cursor=" . urlencode($nextCursor);
+            }
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, $url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                'Authorization: Bearer ' . $apiKey,
+                'Notion-Version: 2022-06-28'
+            ]);
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($httpCode == 200) {
+                $data = json_decode($response, true);
+                if (isset($data['results'])) {
+                    foreach ($data['results'] as $block) {
+                        if ($block['type'] === 'child_page' && isset($block['child_page']['title'])) {
+                            $title = $block['child_page']['title'];
+                            $normalizedTitle = normalizeTitleForPath($title);
+                            if (!empty($normalizedTitle)) {
+                                $subpages[$normalizedTitle] = $block['id'];
+                            }
                         }
                     }
                 }
-                file_put_contents($cacheFile, json_encode($subpages));
+                $nextCursor = $data['next_cursor'] ?? null;
+                $hasMore = $data['has_more'] ?? false;
+            } else {
+                error_log("Nie można pobrać listy podstron dla {$parentPageId}. Kod: {$httpCode}");
+                break;
             }
-        } else {
-            error_log("Nie można pobrać listy podstron dla {$parentPageId}. Kod: {$httpCode}");
+        } while ($hasMore && $nextCursor);
+
+        if (!empty($subpages)) {
+            file_put_contents($cacheFile, json_encode($subpages));
         }
     }
     return $subpages[$subpagePath] ?? null;
