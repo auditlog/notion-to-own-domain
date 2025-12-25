@@ -1,7 +1,13 @@
 <?php
-// Włącz wyświetlanie wszystkich błędów PHP (tylko do celów deweloperskich)
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+// Error reporting only for local development
+if (in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1']) ||
+    ($_SERVER['HTTP_HOST'] ?? '') === 'localhost') {
+    error_reporting(E_ALL);
+    ini_set('display_errors', 1);
+} else {
+    error_reporting(0);
+    ini_set('display_errors', 0);
+}
 // --- START SESJI ---
 // Musi być na samym początku pliku
 session_start(); 
