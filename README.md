@@ -80,7 +80,7 @@ This is a simple PHP project designed to fetch content from a specific Notion pa
 
 *   PHP (tested on 7.x/8.x, requires `curl` extension, session support)
 *   Web server (Apache with `mod_rewrite`, `mod_env` recommended)
-*   Notion API Key
+*   Notion API Key (uses API version `2025-09-03`)
 
 ## Front-end Libraries (via CDN)
 
