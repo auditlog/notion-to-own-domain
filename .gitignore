@@ -1,6 +1,9 @@
 # Configuration files with sensitive data
 private/config.php
 
+# Debug mode flag (create empty .debug file to enable)
+.debug
+
 # Claude Code instructions
 CLAUDE.md
 
