@@ -1,6 +1,73 @@
 <?php
 // www_notion/private/notion_utils.php
 
+// =============================================================================
+// Cache Helper Functions
+// =============================================================================
+
+/**
+ * Atomic cache write - prevents file corruption during concurrent access
+ * Writes to a temporary file first, then renames (atomic operation)
+ */
+function cacheWrite($cacheFile, $data) {
+    $tempFile = $cacheFile . '.' . uniqid('tmp_', true);
+
+    if (@file_put_contents($tempFile, $data, LOCK_EX) === false) {
+        @unlink($tempFile);
+        return false;
+    }
+
+    if (!rename($tempFile, $cacheFile)) {
+        @unlink($tempFile);
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Clean up expired cache files
+ * Should be called periodically (e.g., on every Nth request or via cron)
+ */
+function cacheCleanup($cacheDir, $maxAge = 604800) {
+    if (!is_dir($cacheDir)) {
+        return 0;
+    }
+
+    $deleted = 0;
+    $now = time();
+
+    $files = glob($cacheDir . '*.cache');
+    if ($files === false) {
+        return 0;
+    }
+
+    foreach ($files as $file) {
+        if (is_file($file) && ($now - filemtime($file)) > $maxAge) {
+            if (@unlink($file)) {
+                $deleted++;
+            }
+        }
+    }
+
+    return $deleted;
+}
+
+/**
+ * Probabilistic cache cleanup - runs cleanup with given probability
+ * Avoids running cleanup on every request
+ */
+function maybeCacheCleanup($cacheDir, $probability = 0.01, $maxAge = 604800) {
+    if (mt_rand(1, 1000) <= ($probability * 1000)) {
+        return cacheCleanup($cacheDir, $maxAge);
+    }
+    return 0;
+}
+
+// =============================================================================
+// Notion API Functions
+// =============================================================================
+
 // Funkcja pobierająca zawartość z Notion
 function getNotionContent($pageId, $apiKey, $cacheDir, $specificCacheExpiration) {
     $cacheFile = $cacheDir . 'content_' . md5($pageId) . '.cache';
@@ -77,7 +144,7 @@ function getNotionContent($pageId, $apiKey, $cacheDir, $specificCacheExpiration)
     ];
     
     $finalJsonResponse = json_encode($finalResponseData);
-    file_put_contents($cacheFile, $finalJsonResponse);
+    cacheWrite($cacheFile, $finalJsonResponse);
     return $finalJsonResponse;
 }
 
@@ -90,9 +157,15 @@ function fetchAndRenderChildren($blockId, $apiKey, $cacheDir, $specificContentCa
 
 function normalizeTitleForPath($title) {
     $path = strtolower($title);
-    $path = str_replace(' ', '-', $path); 
-    $path = preg_replace('/[^a-z0-9\-]/', '', $path); 
-    $path = preg_replace('/-+/', '-', $path); 
+
+    // Transliterate Polish characters
+    $polishChars = ['ą', 'ć', 'ę', 'ł', 'ń', 'ó', 'ś', 'ź', 'ż'];
+    $latinChars  = ['a', 'c', 'e', 'l', 'n', 'o', 's', 'z', 'z'];
+    $path = str_replace($polishChars, $latinChars, $path);
+
+    $path = str_replace(' ', '-', $path);
+    $path = preg_replace('/[^a-z0-9\-]/', '', $path);
+    $path = preg_replace('/-+/', '-', $path);
     $path = trim($path, '-');
     return $path;
 }
@@ -153,7 +226,7 @@ function findNotionSubpageId($parentPageId, $subpagePath, $apiKey, $cacheDir, $s
         } while ($hasMore && $nextCursor);
 
         if (!empty($subpages)) {
-            file_put_contents($cacheFile, json_encode($subpages));
+            cacheWrite($cacheFile, json_encode($subpages));
         }
     }
     return $subpages[$subpagePath] ?? null;
@@ -203,8 +276,8 @@ function getNotionPageTitle($pageId, $apiKey, $cacheDir, $specificPagedataCacheE
                 $result['coverUrl'] = $data['cover']['file']['url'];
             }
         }
-        
-        file_put_contents($cacheFile, json_encode($result));
+
+        cacheWrite($cacheFile, json_encode($result));
     } else {
         error_log("Nie można pobrać danych strony Notion (tytuł/okładka) dla ID: {$pageId}. Kod: {$httpCode}");
     }
@@ -286,7 +359,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
         return "<div class=\"error-message\">Błąd pobierania danych z Notion: {$content['error']}</div>";
     }
     
-    if (isset($content['results']) && is_array($content['results'])) {
+    if (isset($content['results']) && is_array($content['results']) && !empty($content['results'])) {
         foreach ($content['results'] as $block) {
             $currentBlockType = $block['type'];
             $isListItem = in_array($currentBlockType, ['bulleted_list_item', 'numbered_list_item']);
@@ -360,7 +433,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
                     }
                     if ($imageUrl) {
                         $html .= "<figure>";
-                        $html .= "<img src=\"{$imageUrl}\" alt=\"" . htmlspecialchars(strip_tags($captionText) ?: 'Obrazek') . "\">";
+                        $html .= "<img src=\"{$imageUrl}\" alt=\"" . htmlspecialchars(strip_tags($captionText) ?: 'Obrazek') . "\" loading=\"lazy\">";
                         if ($captionText) {
                             $html .= "<figcaption>{$captionText}</figcaption>";
                         }
@@ -388,7 +461,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
                             $iconHtml = "<span class=\"callout-emoji\">" . htmlspecialchars($block['callout']['icon']['emoji']) . "</span> ";
                         } elseif (isset($block['callout']['icon']['external']['url'])) {
                             $iconUrl = $block['callout']['icon']['external']['url'];
-                            $iconHtml = "<img src=\"{$iconUrl}\" alt=\"ikona\" class=\"callout-icon-external\"> ";
+                            $iconHtml = "<img src=\"{$iconUrl}\" alt=\"ikona\" class=\"callout-icon-external\" loading=\"lazy\"> ";
                         }
                     }
                     $html .= "<div class=\"callout\">{$iconHtml}{$text}</div>\n";

@@ -278,9 +278,206 @@ h2, h3 {
 
 /* Styl dla H1 w nagłówku kontenera */
 .container header h1 {
-    font-size: 2em; 
-    color: #222; 
-    margin-top: 0; 
-    margin-bottom: 0.5em; 
-    line-height: 1.1; 
+    font-size: 2em;
+    color: #222;
+    margin-top: 0;
+    margin-bottom: 0.5em;
+    line-height: 1.1;
+}
+
+/* Link w nagłówku */
+.header-link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.header-link:hover {
+    text-decoration: none;
+}
+
+/* Breadcrumb navigation */
+.breadcrumb {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0 0 0;
+}
+
+.breadcrumb li {
+    display: inline;
+}
+
+/* Password protected content */
+.password-protected {
+    border: 1px solid #ccc;
+    padding: 15px;
+    margin: 15px 0;
+    background-color: #f9f9f9;
+}
+
+.password-protected h3 {
+    margin-top: 0;
+}
+
+.password-protected input[type="password"] {
+    padding: 5px;
+}
+
+.password-protected button {
+    padding: 5px 10px;
+    cursor: pointer;
+}
+
+.password-error {
+    color: red;
+    margin-top: 10px;
+}
+
+/* Notion toggle blocks */
+.notion-toggle summary {
+    cursor: pointer;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.notion-toggle-content {
+    margin-left: 20px;
+    border-left: 2px solid #eee;
+    padding-left: 10px;
+}
+
+/* Notion block styles */
+.notion-bookmark,
+.notion-embed,
+.notion-video,
+.notion-file,
+.notion-equation,
+.notion-table-of-contents-placeholder {
+    margin: 1em 0;
+    padding: 1em;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    background-color: #f9f9f9;
+}
+
+.notion-embed iframe,
+.notion-video video {
+    max-width: 100%;
+    display: block;
+    margin: 0 auto;
+}
+
+.caption {
+    font-size: 0.9em;
+    color: #555;
+    text-align: center;
+    margin-top: 0.5em;
+}
+
+/* Callout icons */
+.callout-emoji {
+    font-size: 1.2em;
+    margin-right: 0.5em;
+}
+
+.callout-icon-external {
+    width: 1.5em;
+    height: 1.5em;
+    vertical-align: middle;
+    margin-right: 0.5em;
+}
+
+/* Todo items */
+.todo-item label {
+    display: flex;
+    align-items: center;
+}
+
+.todo-item input[type="checkbox"] {
+    margin-right: 8px;
+}
+
+/* Notion equation */
+.notion-equation {
+    text-align: center;
+}
+
+/* Notion text colors */
+.notion-gray { color: gray; }
+.notion-gray-bg { background-color: #f1f1f1; padding: 0.1em 0.3em; border-radius: 3px; }
+.notion-brown { color: brown; }
+.notion-brown-bg { background-color: #f3e9e2; padding: 0.1em 0.3em; border-radius: 3px; }
+.notion-orange { color: orange; }
+.notion-orange-bg { background-color: #fce9d7; padding: 0.1em 0.3em; border-radius: 3px; }
+.notion-yellow { color: #c38f00; }
+.notion-yellow-bg { background-color: #fdf4bf; padding: 0.1em 0.3em; border-radius: 3px; }
+.notion-green { color: green; }
+.notion-green-bg { background-color: #e2f2e4; padding: 0.1em 0.3em; border-radius: 3px; }
+.notion-blue { color: blue; }
+.notion-blue-bg { background-color: #ddebf1; padding: 0.1em 0.3em; border-radius: 3px; }
+.notion-purple { color: purple; }
+.notion-purple-bg { background-color: #ebe4f2; padding: 0.1em 0.3em; border-radius: 3px; }
+.notion-pink { color: pink; }
+.notion-pink-bg { background-color: #f8e4ec; padding: 0.1em 0.3em; border-radius: 3px; }
+.notion-red { color: red; }
+.notion-red-bg { background-color: #f8e4e4; padding: 0.1em 0.3em; border-radius: 3px; }
+
+/* Table of Contents */
+.table-of-contents {
+    background-color: #f9f9f9;
+    padding: 15px;
+    margin-bottom: 30px;
+    border: 1px solid #eee;
+    border-radius: 5px;
+}
+
+.table-of-contents h2 {
+    margin-top: 0;
+}
+
+.table-of-contents li.toc-h2 {
+    margin-left: 20px;
+}
+
+.table-of-contents li.toc-h3 {
+    margin-left: 40px;
+}
+
+/* Lightbox for images */
+.content img {
+    cursor: pointer;
+}
+
+.image-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.image-overlay-content {
+    position: relative;
+    max-width: 90%;
+    max-height: 90%;
+}
+
+.image-overlay img {
+    max-width: 100%;
+    max-height: 90vh;
+    margin: 0;
+}
+
+.close-overlay {
+    position: absolute;
+    top: -40px;
+    right: 0;
+    background-color: white;
+    border: none;
+    padding: 5px 10px;
+    cursor: pointer;
 }
