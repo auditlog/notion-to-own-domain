@@ -23,3 +23,15 @@ Thumbs.db
 
 # Log files
 *.log
+
+# Composer dependencies
+vendor/
+composer.lock
+
+# PHPUnit
+.phpunit.result.cache
+coverage/
+
+# Temporary test files
+tmp/
+*.tmp

@@ -1,0 +1,26 @@
+{
+    "name": "notion-page-viewer/php",
+    "description": "PHP application that fetches and displays Notion pages as a website",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": ">=7.4",
+        "ext-curl": "*",
+        "ext-json": "*",
+        "ext-session": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.5"
+    },
+    "autoload": {
+        "files": [
+            "private/notion_utils.php",
+            "private/security_headers.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    }
+}
