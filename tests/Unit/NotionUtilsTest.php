@@ -66,7 +66,7 @@ class NotionUtilsTest extends TestCase
      */
     public function testNormalizeTitleRemovesSpecialCharacters()
     {
-        $this->assertEquals('hello-world', normalizeTitleForPath('Hello@World!'));
+        $this->assertEquals('helloworld', normalizeTitleForPath('Hello@World!'));
         $this->assertEquals('test123', normalizeTitleForPath('Test#$%123'));
         $this->assertEquals('ab-cd', normalizeTitleForPath('A&B C*D'));
     }

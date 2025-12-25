@@ -76,6 +76,7 @@ class CacheTest extends TestCase
 
         // Write cache
         cacheWrite($cacheFile, $data);
+        clearstatcache(true, $cacheFile);
 
         // Check with valid TTL (cache should be used)
         $validTtl = 3600; // 1 hour
@@ -85,6 +86,7 @@ class CacheTest extends TestCase
 
         // Make cache file old
         touch($cacheFile, time() - 7200); // 2 hours old
+        clearstatcache(true, $cacheFile);
 
         // Check with shorter TTL (cache should be expired)
         $shortTtl = 3600; // 1 hour
@@ -261,6 +263,7 @@ class CacheTest extends TestCase
             // Simulate time passing
             $fileAge = $duration - 100; // Just under expiration
             touch($cacheFile, $now - $fileAge);
+            clearstatcache(true, $cacheFile);
 
             // Check if still valid
             $isValid = (time() - filemtime($cacheFile)) < $duration;
@@ -268,6 +271,7 @@ class CacheTest extends TestCase
 
             // Simulate expiration
             touch($cacheFile, $now - $duration - 100);
+            clearstatcache(true, $cacheFile);
             $isExpired = (time() - filemtime($cacheFile)) >= $duration;
             $this->assertTrue($isExpired, "Cache for {$type} should be expired");
         }

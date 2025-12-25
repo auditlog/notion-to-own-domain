@@ -12,7 +12,7 @@
 function cacheWrite($cacheFile, $data) {
     $tempFile = $cacheFile . '.' . uniqid('tmp_', true);
 
-    if (file_put_contents($tempFile, $data, LOCK_EX) === false) {
+    if (@file_put_contents($tempFile, $data, LOCK_EX) === false) {
         @unlink($tempFile);
         return false;
     }
@@ -157,9 +157,15 @@ function fetchAndRenderChildren($blockId, $apiKey, $cacheDir, $specificContentCa
 
 function normalizeTitleForPath($title) {
     $path = strtolower($title);
-    $path = str_replace(' ', '-', $path); 
-    $path = preg_replace('/[^a-z0-9\-]/', '', $path); 
-    $path = preg_replace('/-+/', '-', $path); 
+
+    // Transliterate Polish characters
+    $polishChars = ['ą', 'ć', 'ę', 'ł', 'ń', 'ó', 'ś', 'ź', 'ż'];
+    $latinChars  = ['a', 'c', 'e', 'l', 'n', 'o', 's', 'z', 'z'];
+    $path = str_replace($polishChars, $latinChars, $path);
+
+    $path = str_replace(' ', '-', $path);
+    $path = preg_replace('/[^a-z0-9\-]/', '', $path);
+    $path = preg_replace('/-+/', '-', $path);
     $path = trim($path, '-');
     return $path;
 }
@@ -353,7 +359,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
         return "<div class=\"error-message\">Błąd pobierania danych z Notion: {$content['error']}</div>";
     }
     
-    if (isset($content['results']) && is_array($content['results'])) {
+    if (isset($content['results']) && is_array($content['results']) && !empty($content['results'])) {
         foreach ($content['results'] as $block) {
             $currentBlockType = $block['type'];
             $isListItem = in_array($currentBlockType, ['bulleted_list_item', 'numbered_list_item']);
