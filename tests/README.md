@@ -105,6 +105,12 @@ composer install
   - Hidden content removal
   - Multiple hide blocks
 
+- ✅ `getImageProxyUrl()` - Image proxy URL generation
+  - Proxy URL for Notion domains (S3, prod-files-secure)
+  - Proxy URL for Unsplash images
+  - Original URL for non-Notion domains
+  - Null/empty input handling
+
 #### BlockRenderingTest.php
 Tests for all Notion block types:
 - ✅ Paragraph (normal and empty)
@@ -164,6 +170,14 @@ Tests for all Notion block types:
 - ✅ Password non-exposure
 - ✅ Header injection prevention
 - ✅ Cache cleanup path traversal protection
+- ✅ Session cookie security (HttpOnly, SameSite)
+- ✅ Session timeout configuration
+- ✅ Brute-force protection (attempts, lockout)
+- ✅ CSRF token generation
+- ✅ CSRF token validation
+- ✅ Password form CSRF token inclusion
+- ✅ Lockout message display
+- ✅ Form disabled during lockout
 
 #### CacheTest.php
 - ✅ Cache file creation and permissions

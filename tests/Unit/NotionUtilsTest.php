@@ -443,4 +443,70 @@ class NotionUtilsTest extends TestCase
         $this->assertStringNotContainsString('Hidden1', $result);
         $this->assertStringNotContainsString('Hidden2', $result);
     }
+
+    /**
+     * Test getImageProxyUrl returns proxy URL for Notion domains
+     */
+    public function testGetImageProxyUrlReturnsProxyForNotionDomains()
+    {
+        $notionUrl = 'https://prod-files-secure.s3.us-west-2.amazonaws.com/abc123/image.png';
+        $result = getImageProxyUrl($notionUrl);
+
+        $this->assertStringStartsWith('/image.php?url=', $result);
+        $this->assertStringContainsString(urlencode($notionUrl), $result);
+    }
+
+    /**
+     * Test getImageProxyUrl returns proxy URL for S3 domains
+     */
+    public function testGetImageProxyUrlReturnsProxyForS3Domains()
+    {
+        $s3Url = 'https://s3.us-west-2.amazonaws.com/bucket/image.jpg';
+        $result = getImageProxyUrl($s3Url);
+
+        $this->assertStringStartsWith('/image.php?url=', $result);
+    }
+
+    /**
+     * Test getImageProxyUrl returns proxy URL for Unsplash
+     */
+    public function testGetImageProxyUrlReturnsProxyForUnsplash()
+    {
+        $unsplashUrl = 'https://images.unsplash.com/photo-123?w=800';
+        $result = getImageProxyUrl($unsplashUrl);
+
+        $this->assertStringStartsWith('/image.php?url=', $result);
+    }
+
+    /**
+     * Test getImageProxyUrl returns original URL for non-Notion domains
+     */
+    public function testGetImageProxyUrlReturnsOriginalForOtherDomains()
+    {
+        $externalUrl = 'https://example.com/image.png';
+        $result = getImageProxyUrl($externalUrl);
+
+        $this->assertEquals($externalUrl, $result);
+    }
+
+    /**
+     * Test getImageProxyUrl returns null for empty input
+     */
+    public function testGetImageProxyUrlReturnsNullForEmptyInput()
+    {
+        $this->assertNull(getImageProxyUrl(''));
+        $this->assertNull(getImageProxyUrl(null));
+    }
+
+    /**
+     * Test getImageProxyUrl handles invalid URLs
+     */
+    public function testGetImageProxyUrlHandlesInvalidUrls()
+    {
+        $invalidUrl = 'not-a-valid-url';
+        $result = getImageProxyUrl($invalidUrl);
+
+        // Should return original for invalid URLs (no host to check)
+        $this->assertEquals($invalidUrl, $result);
+    }
 }

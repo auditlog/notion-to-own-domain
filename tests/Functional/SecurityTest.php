@@ -416,4 +416,111 @@ class SecurityTest extends TestCase
         @unlink($tempDir . 'config.php');
         @rmdir($tempDir);
     }
+
+    /**
+     * Test session cookie parameters are secure
+     */
+    public function testSessionCookieParametersAreSecure()
+    {
+        // Read index.php to verify session configuration
+        $indexContent = file_get_contents(__DIR__ . '/../../public_html/index.php');
+
+        // Check for secure cookie configuration
+        $this->assertStringContainsString('session_set_cookie_params', $indexContent);
+        $this->assertStringContainsString("'httponly' => true", $indexContent);
+        $this->assertStringContainsString("'samesite' => 'Lax'", $indexContent);
+    }
+
+    /**
+     * Test session timeout configuration exists
+     */
+    public function testSessionTimeoutConfigurationExists()
+    {
+        $indexContent = file_get_contents(__DIR__ . '/../../public_html/index.php');
+
+        // Check for session timeout logic
+        $this->assertStringContainsString('$sessionTimeout', $indexContent);
+        $this->assertStringContainsString('last_activity', $indexContent);
+        $this->assertStringContainsString('session_destroy', $indexContent);
+    }
+
+    /**
+     * Test brute-force protection configuration exists
+     */
+    public function testBruteForceProtectionExists()
+    {
+        $indexContent = file_get_contents(__DIR__ . '/../../public_html/index.php');
+
+        // Check for brute-force protection variables
+        $this->assertStringContainsString('$maxPasswordAttempts', $indexContent);
+        $this->assertStringContainsString('$passwordLockoutDuration', $indexContent);
+        $this->assertStringContainsString('password_attempts', $indexContent);
+        $this->assertStringContainsString('password_lockout_until', $indexContent);
+    }
+
+    /**
+     * Test CSRF token generation
+     */
+    public function testCsrfTokenGeneration()
+    {
+        $indexContent = file_get_contents(__DIR__ . '/../../public_html/index.php');
+
+        // Check for CSRF token generation
+        $this->assertStringContainsString('csrf_token', $indexContent);
+        $this->assertStringContainsString('random_bytes', $indexContent);
+        $this->assertStringContainsString('bin2hex', $indexContent);
+    }
+
+    /**
+     * Test CSRF token validation
+     */
+    public function testCsrfTokenValidation()
+    {
+        $indexContent = file_get_contents(__DIR__ . '/../../public_html/index.php');
+
+        // Check for CSRF token validation with hash_equals
+        $this->assertStringContainsString("hash_equals(\$_SESSION['csrf_token']", $indexContent);
+    }
+
+    /**
+     * Test processPasswordTags includes CSRF token in form
+     */
+    public function testPasswordFormIncludesCsrfToken()
+    {
+        $html = '&lt;pass&gt;<p>Secret</p>&lt;/pass&gt;';
+        $csrfToken = 'test_csrf_token_12345';
+
+        $result = processPasswordTags($html, false, false, $csrfToken, false);
+
+        $this->assertStringContainsString('name="csrf_token"', $result);
+        $this->assertStringContainsString($csrfToken, $result);
+        $this->assertStringContainsString('type="hidden"', $result);
+    }
+
+    /**
+     * Test processPasswordTags shows lockout message
+     */
+    public function testPasswordFormShowsLockoutMessage()
+    {
+        $html = '&lt;pass&gt;<p>Secret</p>&lt;/pass&gt;';
+
+        $result = processPasswordTags($html, false, true, 'token', true);
+
+        $this->assertStringContainsString('Zbyt wiele prób', $result);
+        $this->assertStringContainsString('disabled', $result);
+    }
+
+    /**
+     * Test processPasswordTags disables form during lockout
+     */
+    public function testPasswordFormDisabledDuringLockout()
+    {
+        $html = '&lt;pass&gt;<p>Secret</p>&lt;/pass&gt;';
+
+        $result = processPasswordTags($html, false, true, 'token', true);
+
+        // Check that input and button are disabled
+        $this->assertMatchesRegularExpression('/<input[^>]+disabled/', $result);
+        $this->assertMatchesRegularExpression('/<button[^>]+disabled/', $result);
+    }
 }
