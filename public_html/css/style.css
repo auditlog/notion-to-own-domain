@@ -421,6 +421,44 @@ h2, h3 {
 .notion-red { color: red; }
 .notion-red-bg { background-color: #f8e4e4; padding: 0.1em 0.3em; border-radius: 3px; }
 
+/* Block-level background colors (for paragraphs, quotes, headings) */
+p.notion-gray-background,
+blockquote.notion-gray-background,
+h1.notion-gray-background, h2.notion-gray-background, h3.notion-gray-background { background-color: #f1f1f1; padding: 0.5em 1em; border-radius: 4px; }
+p.notion-brown-background,
+blockquote.notion-brown-background,
+h1.notion-brown-background, h2.notion-brown-background, h3.notion-brown-background { background-color: #f3e9e2; padding: 0.5em 1em; border-radius: 4px; }
+p.notion-orange-background,
+blockquote.notion-orange-background,
+h1.notion-orange-background, h2.notion-orange-background, h3.notion-orange-background { background-color: #fce9d7; padding: 0.5em 1em; border-radius: 4px; }
+p.notion-yellow-background,
+blockquote.notion-yellow-background,
+h1.notion-yellow-background, h2.notion-yellow-background, h3.notion-yellow-background { background-color: #fdf4bf; padding: 0.5em 1em; border-radius: 4px; }
+p.notion-green-background,
+blockquote.notion-green-background,
+h1.notion-green-background, h2.notion-green-background, h3.notion-green-background { background-color: #e2f2e4; padding: 0.5em 1em; border-radius: 4px; }
+p.notion-blue-background,
+blockquote.notion-blue-background,
+h1.notion-blue-background, h2.notion-blue-background, h3.notion-blue-background { background-color: #ddebf1; padding: 0.5em 1em; border-radius: 4px; }
+p.notion-purple-background,
+blockquote.notion-purple-background,
+h1.notion-purple-background, h2.notion-purple-background, h3.notion-purple-background { background-color: #ebe4f2; padding: 0.5em 1em; border-radius: 4px; }
+p.notion-pink-background,
+blockquote.notion-pink-background,
+h1.notion-pink-background, h2.notion-pink-background, h3.notion-pink-background { background-color: #f8e4ec; padding: 0.5em 1em; border-radius: 4px; }
+p.notion-red-background,
+blockquote.notion-red-background,
+h1.notion-red-background, h2.notion-red-background, h3.notion-red-background { background-color: #f8e4e4; padding: 0.5em 1em; border-radius: 4px; }
+
+/* Mentions styling */
+.notion-date { font-weight: 500; }
+.notion-user-mention { color: #2196f3; }
+.notion-database-mention { color: #6b7280; font-style: italic; }
+
+/* Audio block */
+.notion-audio { margin: 1em 0; }
+.notion-audio audio { width: 100%; max-width: 400px; }
+
 /* Table of Contents */
 .table-of-contents {
     background-color: #f9f9f9;
