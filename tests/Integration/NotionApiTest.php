@@ -415,4 +415,49 @@ class NotionApiTest extends TestCase
         $this->assertStringContainsString('href="https://example.com"', $result);
         $this->assertStringContainsString('target="_blank"', $result);
     }
+
+    /**
+     * Test notionApiRequest returns correct structure on success
+     */
+    public function testNotionApiRequestReturnsCorrectStructure()
+    {
+        // Test with invalid API key - will fail but should return proper structure
+        $result = notionApiRequest('https://api.notion.com/v1/pages/invalid', 'invalid_key', 0);
+
+        $this->assertIsArray($result);
+        $this->assertArrayHasKey('success', $result);
+        $this->assertArrayHasKey('data', $result);
+        $this->assertArrayHasKey('httpCode', $result);
+        $this->assertArrayHasKey('error', $result);
+        $this->assertIsBool($result['success']);
+    }
+
+    /**
+     * Test notionApiRequest handles 401 unauthorized
+     */
+    public function testNotionApiRequestHandles401Unauthorized()
+    {
+        // Invalid API key should return 401
+        $result = notionApiRequest('https://api.notion.com/v1/pages/test-page', 'invalid_key', 0);
+
+        $this->assertFalse($result['success']);
+        $this->assertEquals(401, $result['httpCode']);
+        $this->assertStringContainsString('Token API', $result['error']);
+    }
+
+    /**
+     * Test notionApiRequest with maxRetries=0 returns failure without retrying
+     */
+    public function testNotionApiRequestNoRetryWithMaxRetriesZero()
+    {
+        // With maxRetries=0, should fail without exponential backoff delays
+        $result = notionApiRequest('https://api.notion.com/v1/pages/test', 'invalid', 0);
+
+        // Should return failure
+        $this->assertFalse($result['success']);
+        // Should have valid HTTP code
+        $this->assertGreaterThan(0, $result['httpCode']);
+        // Should have error message
+        $this->assertNotEmpty($result['error']);
+    }
 }

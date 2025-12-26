@@ -149,6 +149,9 @@ Tests for all Notion block types:
 - ✅ Probabilistic cleanup
 - ✅ Rich text with page mentions
 - ✅ External links
+- ✅ `notionApiRequest()` returns correct structure
+- ✅ `notionApiRequest()` handles 401 unauthorized (token expiration)
+- ✅ `notionApiRequest()` with maxRetries=0 (no retry)
 
 ### Functional Tests (tests/Functional/)
 

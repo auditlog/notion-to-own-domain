@@ -16,6 +16,87 @@ function logError($message) {
 }
 
 // =============================================================================
+// Notion API Helper
+// =============================================================================
+
+/**
+ * Make a request to Notion API with rate limiting and retry logic
+ *
+ * Rate limiting: ~3 requests per second (Notion's limit)
+ * Retry: exponential backoff for 429 (rate limited) and 5xx (server errors)
+ * Token expiration: returns specific error for 401
+ *
+ * @param string $url The API endpoint URL
+ * @param string $apiKey The Notion API key
+ * @param int $maxRetries Maximum number of retries for transient errors
+ * @return array ['success' => bool, 'data' => array|null, 'httpCode' => int, 'error' => string|null]
+ */
+function notionApiRequest($url, $apiKey, $maxRetries = 3) {
+    static $lastRequestTime = 0;
+
+    // Rate limiting: minimum 334ms between requests (~3 req/s)
+    $minInterval = 0.334;
+    $elapsed = microtime(true) - $lastRequestTime;
+    if ($lastRequestTime > 0 && $elapsed < $minInterval) {
+        usleep((int)(($minInterval - $elapsed) * 1000000));
+    }
+
+    $attempt = 0;
+    $lastHttpCode = 0;
+    $lastError = '';
+
+    while ($attempt <= $maxRetries) {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Authorization: Bearer ' . $apiKey,
+            'Notion-Version: 2025-09-03'
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        $lastRequestTime = microtime(true);
+        $lastHttpCode = $httpCode;
+
+        // Success
+        if ($httpCode === 200) {
+            $data = json_decode($response, true);
+            return ['success' => true, 'data' => $data, 'httpCode' => $httpCode, 'error' => null];
+        }
+
+        // 401 Unauthorized - token expired/invalid, no retry
+        if ($httpCode === 401) {
+            logError("Notion API: Token wygasł lub jest nieprawidłowy (401)");
+            return ['success' => false, 'data' => null, 'httpCode' => $httpCode, 'error' => 'Token API wygasł lub jest nieprawidłowy'];
+        }
+
+        // 429 Rate Limited or 5xx Server Error - retry with exponential backoff
+        if ($httpCode === 429 || $httpCode >= 500) {
+            $attempt++;
+            if ($attempt <= $maxRetries) {
+                $backoffTime = pow(2, $attempt); // 2, 4, 8 seconds
+                logError("Notion API: Błąd {$httpCode}, próba {$attempt}/{$maxRetries}, czekam {$backoffTime}s");
+                sleep($backoffTime);
+                continue;
+            }
+            $lastError = "Błąd API po {$maxRetries} próbach. Kod: {$httpCode}";
+        } else {
+            // Other errors (400, 403, 404, etc.) - no retry
+            $lastError = $curlError ?: "Błąd API. Kod: {$httpCode}";
+            break;
+        }
+
+        $attempt++;
+    }
+
+    return ['success' => false, 'data' => null, 'httpCode' => $lastHttpCode, 'error' => $lastError];
+}
+
+// =============================================================================
 // Cache Helper Functions
 // =============================================================================
 
@@ -137,29 +218,18 @@ function getNotionContent($pageId, $apiKey, $cacheDir, $specificCacheExpiration)
             $url .= "&start_cursor=" . urlencode($nextCursor);
         }
 
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: Bearer ' . $apiKey,
-            'Notion-Version: 2025-09-03'
-        ]);
+        $result = notionApiRequest($url, $apiKey);
 
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlError = curl_error($ch);
-        curl_close($ch);
-
-        if ($httpCode != 200) {
+        if (!$result['success']) {
             $errorData = [
-                'error' => 'Nie można pobrać zawartości z Notion. Kod: ' . $httpCode,
-                'message' => $curlError ?: 'Brak dodatkowych informacji o błędzie cURL.',
-                'response_code' => $httpCode
+                'error' => $result['error'] ?: 'Nie można pobrać zawartości z Notion. Kod: ' . $result['httpCode'],
+                'message' => $result['error'] ?: 'Brak dodatkowych informacji.',
+                'response_code' => $result['httpCode']
             ];
             break;
         }
 
-        $data = json_decode($response, true);
+        $data = $result['data'];
 
         if (isset($data['results']) && is_array($data['results'])) {
             $allResults = array_merge($allResults, $data['results']);
@@ -167,9 +237,9 @@ function getNotionContent($pageId, $apiKey, $cacheDir, $specificCacheExpiration)
             $errorData = [
                 'error' => 'Nieprawidłowa odpowiedź z API Notion.',
                 'message' => 'Brak klucza "results" w odpowiedzi.',
-                'response_code' => $httpCode
+                'response_code' => $result['httpCode']
             ];
-            break; 
+            break;
         }
 
         $nextCursor = $data['next_cursor'] ?? null;
@@ -240,19 +310,10 @@ function findNotionSubpageId($parentPageId, $subpagePath, $apiKey, $cacheDir, $s
                 $url .= "&start_cursor=" . urlencode($nextCursor);
             }
 
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Authorization: Bearer ' . $apiKey,
-                'Notion-Version: 2025-09-03'
-            ]);
-            $response = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
+            $result = notionApiRequest($url, $apiKey);
 
-            if ($httpCode == 200) {
-                $data = json_decode($response, true);
+            if ($result['success']) {
+                $data = $result['data'];
                 if (isset($data['results'])) {
                     foreach ($data['results'] as $block) {
                         if ($block['type'] === 'child_page' && isset($block['child_page']['title'])) {
@@ -267,7 +328,7 @@ function findNotionSubpageId($parentPageId, $subpagePath, $apiKey, $cacheDir, $s
                 $nextCursor = $data['next_cursor'] ?? null;
                 $hasMore = $data['has_more'] ?? false;
             } else {
-                logError("Nie można pobrać listy podstron dla {$parentPageId}. Kod: {$httpCode}");
+                logError("Nie można pobrać listy podstron dla {$parentPageId}. " . $result['error']);
                 break;
             }
         } while ($hasMore && $nextCursor);
@@ -291,23 +352,14 @@ function getNotionPageTitle($pageId, $apiKey, $cacheDir, $specificPagedataCacheE
         }
     }
 
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, "https://api.notion.com/v1/pages/{$pageId}");
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Authorization: Bearer ' . $apiKey,
-        'Notion-Version: 2025-09-03'
-    ]);
-    
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    
+    $url = "https://api.notion.com/v1/pages/{$pageId}";
+    $apiResult = notionApiRequest($url, $apiKey);
+
     $result = $defaultResult;
 
-    if ($httpCode == 200) {
-        $data = json_decode($response, true);
-        
+    if ($apiResult['success']) {
+        $data = $apiResult['data'];
+
         if (isset($data['properties']['title']['title'][0]['plain_text'])) {
             $result['title'] = $data['properties']['title']['title'][0]['plain_text'];
         } elseif (isset($data['properties']['Name']['title'][0]['plain_text'])) {
@@ -326,7 +378,7 @@ function getNotionPageTitle($pageId, $apiKey, $cacheDir, $specificPagedataCacheE
 
         cacheWrite($cacheFile, json_encode($result));
     } else {
-        logError("Nie można pobrać danych strony Notion (tytuł/okładka) dla ID: {$pageId}. Kod: {$httpCode}");
+        logError("Nie można pobrać danych strony Notion (tytuł/okładka) dla ID: {$pageId}. " . $apiResult['error']);
     }
     return $result;
 }
