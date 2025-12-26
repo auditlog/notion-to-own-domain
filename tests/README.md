@@ -71,7 +71,7 @@ composer install
 
 #### NotionUtilsTest.php
 - ✅ `normalizeTitleForPath()` - URL slug generation
-  - Polish character removal (ą, ę, ś, ł, ń, ć, ź, ż)
+  - Polish character removal (ą, ę, ś, ł, ń, ć, ź, ż) - both lowercase and uppercase
   - Space to hyphen conversion
   - Special character removal
   - Lowercase conversion
