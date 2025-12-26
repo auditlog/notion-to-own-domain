@@ -65,6 +65,38 @@ function maybeCacheCleanup($cacheDir, $probability = 0.01, $maxAge = 604800) {
 }
 
 // =============================================================================
+// Image Proxy Helper
+// =============================================================================
+
+/**
+ * Generate proxy URL for Notion images
+ * Handles expiring Notion URLs by routing through local image.php proxy
+ */
+function getImageProxyUrl($originalUrl) {
+    if (empty($originalUrl)) {
+        return null;
+    }
+
+    // Check if URL is from Notion/AWS (needs proxying)
+    $host = parse_url($originalUrl, PHP_URL_HOST);
+    $proxyDomains = [
+        'prod-files-secure.s3.us-west-2.amazonaws.com',
+        's3.us-west-2.amazonaws.com',
+        's3-us-west-2.amazonaws.com',
+        'www.notion.so',
+        'images.unsplash.com',
+        'lh3.googleusercontent.com',
+    ];
+
+    if ($host && in_array($host, $proxyDomains)) {
+        return '/image.php?url=' . urlencode($originalUrl);
+    }
+
+    // Return original URL for other domains
+    return $originalUrl;
+}
+
+// =============================================================================
 // Notion API Functions
 // =============================================================================
 
@@ -272,9 +304,9 @@ function getNotionPageTitle($pageId, $apiKey, $cacheDir, $specificPagedataCacheE
 
         if (isset($data['cover'])) {
             if ($data['cover']['type'] === 'external' && isset($data['cover']['external']['url'])) {
-                $result['coverUrl'] = $data['cover']['external']['url'];
+                $result['coverUrl'] = getImageProxyUrl($data['cover']['external']['url']);
             } elseif ($data['cover']['type'] === 'file' && isset($data['cover']['file']['url'])) {
-                $result['coverUrl'] = $data['cover']['file']['url'];
+                $result['coverUrl'] = getImageProxyUrl($data['cover']['file']['url']);
             }
         }
 
@@ -428,13 +460,13 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
                     }
                     $imageUrl = '';
                     if (isset($block['image']['file']['url'])) {
-                        $imageUrl = $block['image']['file']['url'];
+                        $imageUrl = getImageProxyUrl($block['image']['file']['url']);
                     } elseif (isset($block['image']['external']['url'])) {
-                        $imageUrl = $block['image']['external']['url'];
+                        $imageUrl = getImageProxyUrl($block['image']['external']['url']);
                     }
                     if ($imageUrl) {
                         $html .= "<figure>";
-                        $html .= "<img src=\"{$imageUrl}\" alt=\"" . htmlspecialchars(strip_tags($captionText) ?: 'Obrazek') . "\" loading=\"lazy\">";
+                        $html .= "<img src=\"" . htmlspecialchars($imageUrl) . "\" alt=\"" . htmlspecialchars(strip_tags($captionText) ?: 'Obrazek') . "\" loading=\"lazy\">";
                         if ($captionText) {
                             $html .= "<figcaption>{$captionText}</figcaption>";
                         }
@@ -461,8 +493,8 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
                         if (isset($block['callout']['icon']['emoji'])) {
                             $iconHtml = "<span class=\"callout-emoji\">" . htmlspecialchars($block['callout']['icon']['emoji']) . "</span> ";
                         } elseif (isset($block['callout']['icon']['external']['url'])) {
-                            $iconUrl = $block['callout']['icon']['external']['url'];
-                            $iconHtml = "<img src=\"{$iconUrl}\" alt=\"ikona\" class=\"callout-icon-external\" loading=\"lazy\"> ";
+                            $iconUrl = getImageProxyUrl($block['callout']['icon']['external']['url']);
+                            $iconHtml = "<img src=\"" . htmlspecialchars($iconUrl) . "\" alt=\"ikona\" class=\"callout-icon-external\" loading=\"lazy\"> ";
                         }
                     }
                     $html .= "<div class=\"callout\">{$iconHtml}{$text}</div>\n";
