@@ -2,6 +2,20 @@
 // www_notion/private/notion_utils.php
 
 // =============================================================================
+// Logging Helper
+// =============================================================================
+
+/**
+ * Log error message (suppressed during PHPUnit tests)
+ */
+function logError($message) {
+    if (getenv('PHPUNIT_TESTING')) {
+        return;
+    }
+    error_log($message);
+}
+
+// =============================================================================
 // Cache Helper Functions
 // =============================================================================
 
@@ -253,7 +267,7 @@ function findNotionSubpageId($parentPageId, $subpagePath, $apiKey, $cacheDir, $s
                 $nextCursor = $data['next_cursor'] ?? null;
                 $hasMore = $data['has_more'] ?? false;
             } else {
-                error_log("Nie można pobrać listy podstron dla {$parentPageId}. Kod: {$httpCode}");
+                logError("Nie można pobrać listy podstron dla {$parentPageId}. Kod: {$httpCode}");
                 break;
             }
         } while ($hasMore && $nextCursor);
@@ -312,7 +326,7 @@ function getNotionPageTitle($pageId, $apiKey, $cacheDir, $specificPagedataCacheE
 
         cacheWrite($cacheFile, json_encode($result));
     } else {
-        error_log("Nie można pobrać danych strony Notion (tytuł/okładka) dla ID: {$pageId}. Kod: {$httpCode}");
+        logError("Nie można pobrać danych strony Notion (tytuł/okładka) dla ID: {$pageId}. Kod: {$httpCode}");
     }
     return $result;
 }
@@ -336,7 +350,7 @@ function formatRichText($richTextArray, $apiKey, $cacheDir, $specificPagedataCac
                 
                 if (empty($mentionedPageTitle) || $mentionedPageTitle === 'Moja strona z zawartością Notion') { 
                     $mentionedPageTitle = $richText['plain_text'] ?: $mentionedPageId;
-                    error_log("formatRichText: Nie udało się pobrać poprawnego tytułu dla strony ID: {$mentionedPageId}. Użyto: '{$mentionedPageTitle}'");
+                    logError("formatRichText: Nie udało się pobrać poprawnego tytułu dla strony ID: {$mentionedPageId}. Użyto: '{$mentionedPageTitle}'");
                 }
 
                 $path = normalizeTitleForPath($mentionedPageTitle); 
@@ -422,7 +436,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
                         $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                         $html .= "<{$tagName}>{$text}</{$tagName}>\n";
                     } else {
-                        error_log("Nieoczekiwany lub niepoprawny typ nagłówka w notionToHtml: " . $key);
+                        logError("Nieoczekiwany lub niepoprawny typ nagłówka w notionToHtml: " . $key);
                         $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
                         $html .= "<p><strong>(Błąd nagłówka: {$key})</strong> {$text}</p>\n";
                     }
@@ -541,7 +555,7 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
                     } else {
                          $html .= "<div class=\"table-placeholder\">Nie można załadować zawartości tabeli.</div>\n";
                          if(isset($tableRowsContent['error'])) {
-                              error_log("Błąd pobierania wierszy tabeli ({$tableBlockId}): " . $tableRowsContent['error']);
+                              logError("Błąd pobierania wierszy tabeli ({$tableBlockId}): " . $tableRowsContent['error']);
                          }
                     }
                     break;
