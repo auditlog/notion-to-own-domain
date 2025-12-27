@@ -394,18 +394,21 @@ function formatRichText($richTextArray, $apiKey, $cacheDir, $specificPagedataCac
         $type = $richText['type'] ?? 'text'; 
 
         if ($type === 'mention') {
-            if (isset($richText['mention']['type']) && $richText['mention']['type'] === 'page' && isset($richText['mention']['page']['id'])) {
+            $mentionType = $richText['mention']['type'] ?? null;
+
+            if ($mentionType === 'page' && isset($richText['mention']['page']['id'])) {
+                // Page mention - link to the page
                 $mentionedPageId = $richText['mention']['page']['id'];
                 $mentionedPageTitle = 'Untitled';
                 $fetchedPageData = getNotionPageTitle($mentionedPageId, $apiKey, $cacheDir, $specificPagedataCacheExpiration);
                 $mentionedPageTitle = $fetchedPageData['title'] ?? $mentionedPageTitle;
-                
-                if (empty($mentionedPageTitle) || $mentionedPageTitle === 'Moja strona z zawartością Notion') { 
+
+                if (empty($mentionedPageTitle) || $mentionedPageTitle === 'Moja strona z zawartością Notion') {
                     $mentionedPageTitle = $richText['plain_text'] ?: $mentionedPageId;
                     logError("formatRichText: Nie udało się pobrać poprawnego tytułu dla strony ID: {$mentionedPageId}. Użyto: '{$mentionedPageTitle}'");
                 }
 
-                $path = normalizeTitleForPath($mentionedPageTitle); 
+                $path = normalizeTitleForPath($mentionedPageTitle);
                 if (!empty($path)) {
                     $basePath = !empty($currentUrlPathString) ? rtrim($currentUrlPathString, '/') : '';
                     $fullPath = !empty($basePath) ? $basePath . '/' . $path : $path;
@@ -413,8 +416,34 @@ function formatRichText($richTextArray, $apiKey, $cacheDir, $specificPagedataCac
                 } else {
                     $formattedText = htmlspecialchars($mentionedPageTitle);
                 }
+            } elseif ($mentionType === 'date' && isset($richText['mention']['date'])) {
+                // Date mention - format as readable date
+                $dateInfo = $richText['mention']['date'];
+                $startDate = $dateInfo['start'] ?? null;
+                $endDate = $dateInfo['end'] ?? null;
+
+                if ($startDate) {
+                    $formattedStart = date('j M Y', strtotime($startDate));
+                    if ($endDate) {
+                        $formattedEnd = date('j M Y', strtotime($endDate));
+                        $formattedText = '<time class="notion-date">' . htmlspecialchars($formattedStart) . ' → ' . htmlspecialchars($formattedEnd) . '</time>';
+                    } else {
+                        $formattedText = '<time class="notion-date">' . htmlspecialchars($formattedStart) . '</time>';
+                    }
+                } else {
+                    $formattedText = htmlspecialchars($richText['plain_text'] ?? '');
+                }
+            } elseif ($mentionType === 'user') {
+                // User mention - display name
+                $userName = $richText['plain_text'] ?? 'Unknown user';
+                $formattedText = '<span class="notion-user-mention">@' . htmlspecialchars($userName) . '</span>';
+            } elseif ($mentionType === 'database') {
+                // Database mention - display as text (no link since we don't render databases)
+                $dbName = $richText['plain_text'] ?? 'Database';
+                $formattedText = '<span class="notion-database-mention">' . htmlspecialchars($dbName) . '</span>';
             } else {
-                 $formattedText = htmlspecialchars($richText['plain_text'] ?? '');
+                // Other mentions (link_preview, template_mention) - use plain text
+                $formattedText = htmlspecialchars($richText['plain_text'] ?? '');
             }
         } else if ($type === 'text') {
             $currentText = htmlspecialchars($richText['plain_text'] ?? ''); 
@@ -472,21 +501,25 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
             switch ($currentBlockType) {
                 case 'paragraph':
                     $text = formatRichText($block['paragraph']['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
+                    $color = $block['paragraph']['color'] ?? 'default';
+                    $colorClass = ($color !== 'default') ? ' class="notion-' . htmlspecialchars(str_replace('_', '-', $color)) . '"' : '';
                     if (!empty($text) || (isset($block['paragraph']['rich_text']) && empty($block['paragraph']['rich_text']))) {
-                        $html .= "<p>{$text}</p>\n";
+                        $html .= "<p{$colorClass}>{$text}</p>\n";
                     } else {
-                        $html .= "<p></p>\n"; 
+                        $html .= "<p{$colorClass}></p>\n";
                     }
                     break;
                 case 'heading_1':
                 case 'heading_2':
                 case 'heading_3':
-                    $key = $currentBlockType; 
-                    $level = substr($key, -1); 
-                    if (is_numeric($level) && $level >= 1 && $level <= 6) { 
-                        $tagName = 'h' . $level; 
+                    $key = $currentBlockType;
+                    $level = substr($key, -1);
+                    if (is_numeric($level) && $level >= 1 && $level <= 6) {
+                        $tagName = 'h' . $level;
                         $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
-                        $html .= "<{$tagName}>{$text}</{$tagName}>\n";
+                        $color = $block[$key]['color'] ?? 'default';
+                        $colorClass = ($color !== 'default') ? ' class="notion-' . htmlspecialchars(str_replace('_', '-', $color)) . '"' : '';
+                        $html .= "<{$tagName}{$colorClass}>{$text}</{$tagName}>\n";
                     } else {
                         logError("Nieoczekiwany lub niepoprawny typ nagłówka w notionToHtml: " . $key);
                         $text = formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
@@ -550,7 +583,9 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
                     break;
                 case 'quote':
                     $text = formatRichText($block['quote']['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
-                    $html .= "<blockquote>{$text}</blockquote>\n";
+                    $color = $block['quote']['color'] ?? 'default';
+                    $colorClass = ($color !== 'default') ? ' class="notion-' . htmlspecialchars(str_replace('_', '-', $color)) . '"' : '';
+                    $html .= "<blockquote{$colorClass}>{$text}</blockquote>\n";
                     break;
                 case 'callout':
                     $text = formatRichText($block['callout']['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
@@ -689,6 +724,27 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
                     }
                     $html .= "</div>\n";
                     break;
+                case 'audio':
+                    $audioUrl = '';
+                    $captionArray = $block['audio']['caption'] ?? [];
+                    $captionText = formatRichText($captionArray, $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString);
+                    $audioType = $block['audio']['type'] ?? null;
+                    if ($audioType === 'external' && isset($block['audio']['external']['url'])) {
+                        $audioUrl = $block['audio']['external']['url'];
+                    } elseif ($audioType === 'file' && isset($block['audio']['file']['url'])) {
+                        $audioUrl = $block['audio']['file']['url'];
+                    }
+                    $html .= "<div class=\"notion-audio\">";
+                    if (filter_var($audioUrl, FILTER_VALIDATE_URL)) {
+                        $html .= "<audio controls src=\"{$audioUrl}\" style=\"width:100%; max-width: 400px;\">Twoja przeglądarka nie obsługuje tagu audio.</audio>";
+                    } else {
+                        $html .= "<p>Nieprawidłowy URL audio.</p>";
+                    }
+                    if (!empty($captionText)) {
+                        $html .= "<div class=\"caption\">{$captionText}</div>";
+                    }
+                    $html .= "</div>\n";
+                    break;
                 case 'file':
                     $fileUrl = '';
                     $fileName = 'Plik'; 
@@ -718,6 +774,10 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
                     $color = $block['table_of_contents']['color'] ?? 'default';
                     $html .= "<div class=\"notion-table-of-contents-placeholder\" data-color=\"" . htmlspecialchars($color) . "\">";
                     $html .= "</div>\n";
+                    break;
+                case 'breadcrumb':
+                    // Breadcrumb block - rendered as placeholder, actual breadcrumb built from URL path
+                    $html .= "<nav class=\"notion-breadcrumb\" aria-label=\"Breadcrumb\"></nav>\n";
                     break;
                 default:
                     break; 

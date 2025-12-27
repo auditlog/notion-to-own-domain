@@ -3,11 +3,16 @@ document.addEventListener('DOMContentLoaded', function() {
     // Create table of contents
     const content = document.querySelector('.content');
     const headings = content.querySelectorAll('h1, h2, h3');
+    const tocPlaceholder = content.querySelector('.notion-table-of-contents-placeholder');
 
-    if (headings.length > 3) {
+    // Only generate TOC if there's a placeholder from Notion's table_of_contents block
+    // or if there are many headings and no placeholder (fallback behavior)
+    const shouldGenerateToc = tocPlaceholder || headings.length > 5;
+
+    if (shouldGenerateToc && headings.length > 0) {
         const toc = document.createElement('div');
         toc.className = 'table-of-contents';
-        toc.innerHTML = '<h2>Spis treści</h2><ul></ul>';
+        toc.innerHTML = '<ul></ul>';
 
         const tocList = toc.querySelector('ul');
 
@@ -33,8 +38,15 @@ document.addEventListener('DOMContentLoaded', function() {
             tocList.appendChild(item);
         });
 
-        // Insert table of contents at the beginning of content
-        content.insertBefore(toc, content.firstChild);
+        // Insert TOC in place of placeholder, or at beginning if no placeholder
+        if (tocPlaceholder) {
+            tocPlaceholder.replaceWith(toc);
+        } else {
+            content.insertBefore(toc, content.firstChild);
+        }
+    } else if (tocPlaceholder) {
+        // Remove empty placeholder if not enough headings
+        tocPlaceholder.remove();
     }
 
     // Image lightbox functionality
