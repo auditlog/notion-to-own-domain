@@ -836,4 +836,132 @@ class BlockRenderingTest extends TestCase
         $this->assertStringContainsString('Valid paragraph', $html);
         // Should not throw an error for unsupported type
     }
+
+    /**
+     * Test audio block rendering
+     */
+    public function testAudioBlockRendering()
+    {
+        $content = [
+            'results' => [
+                [
+                    'type' => 'audio',
+                    'audio' => [
+                        'type' => 'external',
+                        'external' => [
+                            'url' => 'https://example.com/audio.mp3'
+                        ],
+                        'caption' => [
+                            ['type' => 'text', 'plain_text' => 'Audio caption']
+                        ]
+                    ]
+                ]
+            ]
+        ];
+
+        $html = notionToHtml($content, $this->apiKey, $this->tempCacheDir, $this->cacheDurations);
+
+        $this->assertStringContainsString('notion-audio', $html);
+        $this->assertStringContainsString('<audio', $html);
+        $this->assertStringContainsString('controls', $html);
+        $this->assertStringContainsString('https://example.com/audio.mp3', $html);
+        $this->assertStringContainsString('Audio caption', $html);
+    }
+
+    /**
+     * Test breadcrumb block rendering
+     */
+    public function testBreadcrumbBlockRendering()
+    {
+        $content = [
+            'results' => [
+                [
+                    'type' => 'breadcrumb',
+                    'breadcrumb' => []
+                ]
+            ]
+        ];
+
+        $html = notionToHtml($content, $this->apiKey, $this->tempCacheDir, $this->cacheDurations);
+
+        $this->assertStringContainsString('notion-breadcrumb', $html);
+        $this->assertStringContainsString('<nav', $html);
+    }
+
+    /**
+     * Test paragraph with background color
+     */
+    public function testParagraphWithBackgroundColor()
+    {
+        $content = [
+            'results' => [
+                [
+                    'type' => 'paragraph',
+                    'paragraph' => [
+                        'rich_text' => [
+                            ['type' => 'text', 'plain_text' => 'Colored paragraph']
+                        ],
+                        'color' => 'blue_background'
+                    ]
+                ]
+            ]
+        ];
+
+        $html = notionToHtml($content, $this->apiKey, $this->tempCacheDir, $this->cacheDurations);
+
+        $this->assertStringContainsString('notion-blue-background', $html);
+        $this->assertStringContainsString('Colored paragraph', $html);
+    }
+
+    /**
+     * Test heading with background color
+     */
+    public function testHeadingWithBackgroundColor()
+    {
+        $content = [
+            'results' => [
+                [
+                    'type' => 'heading_2',
+                    'heading_2' => [
+                        'rich_text' => [
+                            ['type' => 'text', 'plain_text' => 'Colored heading']
+                        ],
+                        'color' => 'yellow_background'
+                    ]
+                ]
+            ]
+        ];
+
+        $html = notionToHtml($content, $this->apiKey, $this->tempCacheDir, $this->cacheDurations);
+
+        $this->assertStringContainsString('notion-yellow-background', $html);
+        $this->assertStringContainsString('<h2', $html);
+        $this->assertStringContainsString('Colored heading', $html);
+    }
+
+    /**
+     * Test quote with background color
+     */
+    public function testQuoteWithBackgroundColor()
+    {
+        $content = [
+            'results' => [
+                [
+                    'type' => 'quote',
+                    'quote' => [
+                        'rich_text' => [
+                            ['type' => 'text', 'plain_text' => 'Colored quote']
+                        ],
+                        'color' => 'red_background'
+                    ]
+                ]
+            ]
+        ];
+
+        $html = notionToHtml($content, $this->apiKey, $this->tempCacheDir, $this->cacheDurations);
+
+        $this->assertStringContainsString('notion-red-background', $html);
+        $this->assertStringContainsString('<blockquote', $html);
+        $this->assertStringContainsString('Colored quote', $html);
+    }
 }

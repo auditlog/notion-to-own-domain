@@ -111,18 +111,26 @@ composer install
   - Original URL for non-Notion domains
   - Null/empty input handling
 
+- ✅ `formatRichText()` mention types
+  - Date mention (single date)
+  - Date range mention (start → end)
+  - User mention (@name)
+  - Database mention
+
 #### BlockRenderingTest.php
 Tests for all Notion block types:
-- ✅ Paragraph (normal and empty)
-- ✅ Headings (h1, h2, h3)
+- ✅ Paragraph (normal, empty, with background color)
+- ✅ Headings (h1, h2, h3, with background color)
 - ✅ Lists (bulleted, numbered, mixed)
 - ✅ To-do items (checked/unchecked)
 - ✅ Toggle blocks
 - ✅ Code blocks (with/without language)
-- ✅ Quotes
+- ✅ Quotes (with background color)
 - ✅ Dividers
 - ✅ Callouts (emoji and external icon)
 - ✅ Images (file and external URL, with caption)
+- ✅ Audio (external URL, with caption)
+- ✅ Breadcrumb
 - ✅ Child pages
 - ✅ Bookmarks
 - ✅ Equations

@@ -509,4 +509,104 @@ class NotionUtilsTest extends TestCase
         // Should return original for invalid URLs (no host to check)
         $this->assertEquals($invalidUrl, $result);
     }
+
+    /**
+     * Test formatRichText with date mention (single date)
+     */
+    public function testFormatRichTextWithDateMention()
+    {
+        $richTextArray = [
+            [
+                'type' => 'mention',
+                'plain_text' => '2025-01-15',
+                'mention' => [
+                    'type' => 'date',
+                    'date' => [
+                        'start' => '2025-01-15',
+                        'end' => null
+                    ]
+                ]
+            ]
+        ];
+
+        $result = formatRichText($richTextArray, 'test_key', $this->tempCacheDir, 3600, '');
+
+        $this->assertStringContainsString('<time', $result);
+        $this->assertStringContainsString('notion-date', $result);
+        $this->assertStringContainsString('15 Jan 2025', $result);
+    }
+
+    /**
+     * Test formatRichText with date range mention
+     */
+    public function testFormatRichTextWithDateRangeMention()
+    {
+        $richTextArray = [
+            [
+                'type' => 'mention',
+                'plain_text' => '2025-01-15 → 2025-01-20',
+                'mention' => [
+                    'type' => 'date',
+                    'date' => [
+                        'start' => '2025-01-15',
+                        'end' => '2025-01-20'
+                    ]
+                ]
+            ]
+        ];
+
+        $result = formatRichText($richTextArray, 'test_key', $this->tempCacheDir, 3600, '');
+
+        $this->assertStringContainsString('15 Jan 2025', $result);
+        $this->assertStringContainsString('→', $result);
+        $this->assertStringContainsString('20 Jan 2025', $result);
+    }
+
+    /**
+     * Test formatRichText with user mention
+     */
+    public function testFormatRichTextWithUserMention()
+    {
+        $richTextArray = [
+            [
+                'type' => 'mention',
+                'plain_text' => 'Jan Kowalski',
+                'mention' => [
+                    'type' => 'user',
+                    'user' => [
+                        'id' => 'user-123'
+                    ]
+                ]
+            ]
+        ];
+
+        $result = formatRichText($richTextArray, 'test_key', $this->tempCacheDir, 3600, '');
+
+        $this->assertStringContainsString('notion-user-mention', $result);
+        $this->assertStringContainsString('@Jan Kowalski', $result);
+    }
+
+    /**
+     * Test formatRichText with database mention
+     */
+    public function testFormatRichTextWithDatabaseMention()
+    {
+        $richTextArray = [
+            [
+                'type' => 'mention',
+                'plain_text' => 'Tasks Database',
+                'mention' => [
+                    'type' => 'database',
+                    'database' => [
+                        'id' => 'db-123'
+                    ]
+                ]
+            ]
+        ];
+
+        $result = formatRichText($richTextArray, 'test_key', $this->tempCacheDir, 3600, '');
+
+        $this->assertStringContainsString('notion-database-mention', $result);
+        $this->assertStringContainsString('Tasks Database', $result);
+    }
 }
