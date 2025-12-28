@@ -578,4 +578,31 @@ class SecurityTest extends TestCase
             'CSRF token should be regenerated when lockout is triggered'
         );
     }
+
+    /**
+     * Test correct password on max attempt does not trigger lockout
+     * Verifies fix: user with 2 failed attempts who submits correct password on 3rd try
+     * should succeed, not be locked out
+     */
+    public function testCorrectPasswordOnMaxAttemptSucceeds()
+    {
+        $indexContent = file_get_contents(__DIR__ . '/../../public_html/index.php');
+
+        // Verify lockout check is conditional on $passwordError being true
+        // This ensures correct password doesn't trigger lockout
+        $this->assertStringContainsString(
+            'if ($passwordError && $_SESSION[\'password_attempts\'] >= $maxPasswordAttempts)',
+            $indexContent,
+            'Lockout should only trigger when $passwordError is true (failed password)'
+        );
+
+        // Verify successful password validation resets attempts and does NOT check lockout
+        // Pattern: hash_equals success block resets counter
+        $successResetsPattern = '/hash_equals\(\$contentPassword,\s*\$submittedPassword\)[^{]*\{[^}]*\$_SESSION\[.password_attempts.\]\s*=\s*0/s';
+        $this->assertMatchesRegularExpression(
+            $successResetsPattern,
+            $indexContent,
+            'Successful password should reset attempt counter in success block'
+        );
+    }
 }
