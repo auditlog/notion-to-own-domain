@@ -68,27 +68,39 @@ if (!isset($_SESSION['password_attempts'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content_password'])) {
-    // Check if locked out
+    // Check if locked out first
     if ($_SESSION['password_lockout_until'] > time()) {
         $lockoutError = true;
         $passwordError = true;
     } else {
-        // Validate CSRF token first
-        $submittedToken = $_POST['csrf_token'] ?? '';
-        if (!hash_equals($_SESSION['csrf_token'] ?? '', $submittedToken)) {
-            $csrfError = true;
-            $passwordError = true; // Show generic error to user
-        } else {
-            // Password validation - limit length and special characters
-            $submittedPassword = $_POST['content_password'];
+        // Increment attempt counter for ANY form submission (before any validation)
+        // This prevents attackers from bypassing brute-force protection with invalid CSRF tokens
+        $_SESSION['password_attempts']++;
 
-            // Check password length (max 100 characters to prevent DoS attacks)
-            if (strlen($submittedPassword) > 100) {
+        // Check if max attempts reached - apply lockout immediately
+        if ($_SESSION['password_attempts'] >= $maxPasswordAttempts) {
+            $_SESSION['password_lockout_until'] = time() + $passwordLockoutDuration;
+            $_SESSION['password_attempts'] = 0;
+            $lockoutError = true;
+            $passwordError = true;
+            // Regenerate CSRF token after lockout
+            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        } else {
+            // Validate CSRF token
+            $submittedToken = $_POST['csrf_token'] ?? '';
+            if (!hash_equals($_SESSION['csrf_token'] ?? '', $submittedToken)) {
+                $csrfError = true;
                 $passwordError = true;
-                $_SESSION['password_attempts']++;
+                // Regenerate CSRF token after failed attempt to prevent token fixation
+                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
             } else {
-                // Constant-time comparison (protection against timing attacks)
-                if (hash_equals($contentPassword, $submittedPassword)) {
+                // Password validation - limit length and special characters
+                $submittedPassword = $_POST['content_password'];
+
+                // Check password length (max 100 characters to prevent DoS attacks)
+                if (strlen($submittedPassword) > 100) {
+                    $passwordError = true;
+                } elseif (hash_equals($contentPassword, $submittedPassword)) {
                     // Success - reset attempts and verify
                     $_SESSION['password_attempts'] = 0;
                     $_SESSION['password_lockout_until'] = 0;
@@ -102,15 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['content_password'])) 
                     exit;
                 } else {
                     $passwordError = true;
-                    $_SESSION['password_attempts']++;
                 }
-            }
-
-            // Check if max attempts reached - apply lockout
-            if ($_SESSION['password_attempts'] >= $maxPasswordAttempts) {
-                $_SESSION['password_lockout_until'] = time() + $passwordLockoutDuration;
-                $_SESSION['password_attempts'] = 0;
-                $lockoutError = true;
             }
         }
     }
