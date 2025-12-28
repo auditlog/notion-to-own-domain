@@ -189,6 +189,10 @@ Tests for all Notion block types:
 - ✅ Password form CSRF token inclusion
 - ✅ Lockout message display
 - ✅ Form disabled during lockout
+- ✅ CSRF failure increments brute-force counter
+- ✅ CSRF token regeneration after failure
+- ✅ Lockout triggers CSRF token regeneration
+- ✅ Correct password on max attempt succeeds
 
 #### CacheTest.php
 - ✅ Cache file creation and permissions
