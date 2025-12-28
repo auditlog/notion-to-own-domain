@@ -523,4 +523,59 @@ class SecurityTest extends TestCase
         $this->assertMatchesRegularExpression('/<input[^>]+disabled/', $result);
         $this->assertMatchesRegularExpression('/<button[^>]+disabled/', $result);
     }
+
+    /**
+     * Test CSRF failure increments brute-force counter
+     * This verifies the fix for: "CSRF validation failure does not increment brute-force counter"
+     */
+    public function testCsrfFailureIncrementsBruteForceCounter()
+    {
+        $indexContent = file_get_contents(__DIR__ . '/../../public_html/index.php');
+
+        // Verify that password_attempts is incremented BEFORE CSRF validation
+        // The pattern should show: increment happens, then lockout check, then CSRF check
+        $incrementPos = strpos($indexContent, "\$_SESSION['password_attempts']++");
+        $csrfCheckPos = strpos($indexContent, "hash_equals(\$_SESSION['csrf_token']");
+
+        $this->assertNotFalse($incrementPos, 'Attempt increment should exist');
+        $this->assertNotFalse($csrfCheckPos, 'CSRF check should exist');
+        $this->assertLessThan(
+            $csrfCheckPos,
+            $incrementPos,
+            'Attempt counter must be incremented BEFORE CSRF validation to prevent bypass'
+        );
+    }
+
+    /**
+     * Test CSRF token regeneration after failed attempt
+     */
+    public function testCsrfTokenRegenerationAfterFailure()
+    {
+        $indexContent = file_get_contents(__DIR__ . '/../../public_html/index.php');
+
+        // Check that CSRF token is regenerated after failed CSRF validation
+        // This should appear within the CSRF failure block
+        $csrfFailurePattern = '/if\s*\(\s*!hash_equals.*csrf_token.*\{[^}]*\$_SESSION\[.csrf_token.\]\s*=\s*bin2hex/s';
+        $this->assertMatchesRegularExpression(
+            $csrfFailurePattern,
+            $indexContent,
+            'CSRF token should be regenerated after validation failure'
+        );
+    }
+
+    /**
+     * Test lockout triggers CSRF token regeneration
+     */
+    public function testLockoutRegeneratesCsrfToken()
+    {
+        $indexContent = file_get_contents(__DIR__ . '/../../public_html/index.php');
+
+        // Check that CSRF token is regenerated when lockout is triggered
+        $lockoutPattern = '/password_lockout_until.*=.*time\(\).*\+.*\$passwordLockoutDuration[^}]*\$_SESSION\[.csrf_token.\]\s*=\s*bin2hex/s';
+        $this->assertMatchesRegularExpression(
+            $lockoutPattern,
+            $indexContent,
+            'CSRF token should be regenerated when lockout is triggered'
+        );
+    }
 }
