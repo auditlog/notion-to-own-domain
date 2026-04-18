@@ -40,3 +40,6 @@ tmp/
 *.tmp
 .tmpdev/
 test-page-notion.md
+
+# Local archive snapshots (pre-deploy backups)
+.arch*/

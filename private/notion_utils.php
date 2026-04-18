@@ -15,6 +15,18 @@ function logError($message) {
     error_log($message);
 }
 
+/**
+ * Check whether debug mode is enabled via `.debug` file in project root.
+ * Cached per-request to avoid repeated filesystem stat calls.
+ */
+function isDebugMode() {
+    static $cached = null;
+    if ($cached === null) {
+        $cached = file_exists(__DIR__ . '/../.debug');
+    }
+    return $cached;
+}
+
 // =============================================================================
 // Notion API Helper
 // =============================================================================
@@ -51,13 +63,14 @@ function notionApiRequest($url, $apiKey, $maxRetries = 3) {
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             'Authorization: Bearer ' . $apiKey,
-            'Notion-Version: 2025-09-03'
+            'Notion-Version: 2026-03-11'
         ]);
 
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
-        curl_close($ch);
+        // curl_close() is a no-op since PHP 8.0 and deprecated since 8.5.
+        // The handle is released automatically when $ch goes out of scope.
 
         $lastRequestTime = microtime(true);
         $lastHttpCode = $httpCode;
@@ -174,11 +187,13 @@ function getImageProxyUrl($originalUrl) {
 
     // Check if URL is from Notion/AWS (needs proxying)
     $host = parse_url($originalUrl, PHP_URL_HOST);
+    // Keep in sync with allowed domains in public_html/image.php
     $proxyDomains = [
         'prod-files-secure.s3.us-west-2.amazonaws.com',
         's3.us-west-2.amazonaws.com',
         's3-us-west-2.amazonaws.com',
         'www.notion.so',
+        'file.notion.so',
         'images.unsplash.com',
         'lh3.googleusercontent.com',
     ];
@@ -779,8 +794,76 @@ function notionToHtml($content, $apiKey, $cacheDir, $cacheDurationsArray, $curre
                     // Breadcrumb block - rendered as placeholder, actual breadcrumb built from URL path
                     $html .= "<nav class=\"notion-breadcrumb\" aria-label=\"Breadcrumb\"></nav>\n";
                     break;
+                case 'column_list':
+                    // Column container - children are individual column blocks
+                    $html .= "<div class=\"notion-column-list\">\n";
+                    if (isset($block['has_children']) && $block['has_children']) {
+                        $html .= fetchAndRenderChildren($block['id'], $apiKey, $cacheDir, $cacheDurationsArray['content'], $currentUrlPathString);
+                    }
+                    $html .= "</div>\n";
+                    break;
+                case 'column':
+                    // Single column inside a column_list - children are the actual content
+                    $widthRatio = isset($block['column']['width_ratio']) && is_numeric($block['column']['width_ratio'])
+                        ? ' style="flex:' . htmlspecialchars((string)$block['column']['width_ratio']) . ';"'
+                        : '';
+                    $html .= "<div class=\"notion-column\"{$widthRatio}>\n";
+                    if (isset($block['has_children']) && $block['has_children']) {
+                        $html .= fetchAndRenderChildren($block['id'], $apiKey, $cacheDir, $cacheDurationsArray['content'], $currentUrlPathString);
+                    }
+                    $html .= "</div>\n";
+                    break;
+                case 'synced_block':
+                    // Synced block mirrors content from another location.
+                    // For original: synced_from is null, children hold the content.
+                    // For duplicate: synced_from.block_id points to source; we still fetch children to render the synced content.
+                    $html .= "<div class=\"notion-synced-block\">\n";
+                    if (isset($block['has_children']) && $block['has_children']) {
+                        $html .= fetchAndRenderChildren($block['id'], $apiKey, $cacheDir, $cacheDurationsArray['content'], $currentUrlPathString);
+                    }
+                    $html .= "</div>\n";
+                    break;
+                case 'meeting_notes':
+                case 'transcription':
+                    // `transcription` renamed to `meeting_notes` in Notion-Version 2026-03-11.
+                    // Both share identical schema - render as toggle-like container with children.
+                    $key = $currentBlockType;
+                    $title = isset($block[$key]['rich_text'])
+                        ? formatRichText($block[$key]['rich_text'], $apiKey, $cacheDir, $cacheDurationsArray['pagedata'], $currentUrlPathString)
+                        : 'Notatki ze spotkania';
+                    $html .= "<details class=\"notion-meeting-notes\" open><summary>{$title}</summary>";
+                    if (isset($block['has_children']) && $block['has_children']) {
+                        $html .= "<div class=\"notion-meeting-notes-content\">";
+                        $html .= fetchAndRenderChildren($block['id'], $apiKey, $cacheDir, $cacheDurationsArray['content'], $currentUrlPathString);
+                        $html .= "</div>";
+                    }
+                    $html .= "</details>\n";
+                    break;
+                case 'link_preview':
+                    // Link preview blocks are rendered as a simple link (similar to bookmark).
+                    $linkUrl = $block['link_preview']['url'] ?? '';
+                    if (filter_var($linkUrl, FILTER_VALIDATE_URL)) {
+                        $html .= "<div class=\"notion-link-preview\"><a href=\"" . htmlspecialchars($linkUrl) . "\" target=\"_blank\" rel=\"noopener noreferrer\">" . htmlspecialchars($linkUrl) . "</a></div>\n";
+                    }
+                    break;
+                case 'unsupported':
+                    // Explicit unsupported marker from Notion API
+                    logError("Notion API: blok 'unsupported' na stronie, id={$block['id']}");
+                    if (isDebugMode()) {
+                        $html .= "<div class=\"notion-unsupported\">[Notion: nieobsługiwany typ bloku]</div>\n";
+                    } else {
+                        $html .= "<!-- Notion unsupported block id={$block['id']} -->\n";
+                    }
+                    break;
                 default:
-                    break; 
+                    // Unknown block type - log for diagnostics and surface only in debug mode
+                    logError("notionToHtml: nieznany typ bloku '{$currentBlockType}', id=" . ($block['id'] ?? 'unknown'));
+                    if (isDebugMode()) {
+                        $html .= "<div class=\"notion-unknown-block\" data-type=\"" . htmlspecialchars($currentBlockType) . "\">[Nieobsługiwany blok: " . htmlspecialchars($currentBlockType) . "]</div>\n";
+                    } else {
+                        $html .= "<!-- Notion unknown block type=" . htmlspecialchars($currentBlockType) . " -->\n";
+                    }
+                    break;
             }
          }
         if ($inList) {

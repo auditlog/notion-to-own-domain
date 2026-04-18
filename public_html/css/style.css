@@ -519,3 +519,66 @@ h1.notion-red-background, h2.notion-red-background, h3.notion-red-background { b
     padding: 5px 10px;
     cursor: pointer;
 }
+
+/* Columns layout (column_list / column) */
+.notion-column-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    margin: 1rem 0;
+}
+
+.notion-column {
+    flex: 1;
+    min-width: 200px;
+}
+
+@media (max-width: 640px) {
+    .notion-column-list {
+        flex-direction: column;
+    }
+}
+
+/* Synced block - transparent container, renders children inline */
+.notion-synced-block {
+    /* No visual distinction by design */
+}
+
+/* Meeting notes / transcription (Notion-Version 2026-03-11 rename) */
+.notion-meeting-notes {
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 0.5rem 1rem;
+    margin: 1rem 0;
+    background: #fafafa;
+}
+
+.notion-meeting-notes summary {
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.notion-meeting-notes-content {
+    margin-top: 0.5rem;
+}
+
+/* Link preview block */
+.notion-link-preview {
+    margin: 1rem 0;
+    padding: 0.5rem;
+    border-left: 3px solid #d0d0d0;
+    background: #fafafa;
+    word-break: break-all;
+}
+
+/* Debug-only visualization for unknown/unsupported blocks */
+.notion-unknown-block,
+.notion-unsupported {
+    padding: 0.5rem;
+    margin: 0.5rem 0;
+    border: 1px dashed #c0392b;
+    color: #c0392b;
+    font-family: monospace;
+    font-size: 0.85rem;
+    background: #fff5f5;
+}

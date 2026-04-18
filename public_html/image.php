@@ -14,9 +14,11 @@ if (empty($url) || !filter_var($url, FILTER_VALIDATE_URL)) {
 }
 
 // Security: Only allow Notion-related domains
+// Keep in sync with $proxyDomains in private/notion_utils.php::getImageProxyUrl()
 $allowedDomains = [
     'prod-files-secure.s3.us-west-2.amazonaws.com',
     'www.notion.so',
+    'file.notion.so', // Authenticated Notion files CDN
     's3.us-west-2.amazonaws.com',
     's3-us-west-2.amazonaws.com',
     'images.unsplash.com', // Notion uses Unsplash for some covers
@@ -72,7 +74,7 @@ $imageData = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $contentType = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
 $curlError = curl_error($ch);
-curl_close($ch);
+// curl_close() is a no-op since PHP 8.0 and deprecated since 8.5.
 
 // Handle fetch errors
 if ($httpCode !== 200 || empty($imageData)) {
